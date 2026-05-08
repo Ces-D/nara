@@ -1,0 +1,16 @@
+[package]
+name = "titans_tower"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+log.workspace = true
+serenity.workspace = true
+poise.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+rrule.workspace = true
+konan_core = { path = "../../crates/konan/" }
+brainiac_core = { path = "../../crates/brainiac/" }

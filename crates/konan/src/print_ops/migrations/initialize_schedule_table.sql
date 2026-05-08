@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS schedule (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  task TEXT NOT NULL,
+  r_rule TEXT NOT NULL,
+  start_unix INTEGER NOT NULL,
+  next_run_unix INTEGER
+) STRICT;
+

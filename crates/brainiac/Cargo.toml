@@ -1,0 +1,15 @@
+[package]
+name = "brainiac_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+log.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+serde.workspace = true
+fsrs.workspace = true
+chrono.workspace = true

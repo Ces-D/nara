@@ -1,0 +1,11 @@
+[package]
+name = "konan_infra"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+log.workspace = true
+clap.workspace = true
+tokio.workspace = true
+konan_core = { path = "../../crates/konan/" }
