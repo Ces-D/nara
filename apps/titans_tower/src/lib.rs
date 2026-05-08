@@ -26,10 +26,7 @@ pub enum AppError {
 
 pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
     let options: poise::FrameworkOptions<AppData, AppError> = poise::FrameworkOptions {
-        commands: vec![
-            commands::konan::konan(),
-            commands::brainiac::brainiac(),
-        ],
+        commands: vec![commands::konan::konan(), commands::brainiac::brainiac()],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("-".into()),
             ..Default::default()
@@ -53,8 +50,9 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
 
     let framework = poise::FrameworkBuilder::default()
         .options(options)
-        .setup(|_ctx, _ready, _framework| {
+        .setup(|_ctx, ready, _framework| {
             Box::pin(async move {
+                log::info!("Connected to Discord as {}", ready.user.name);
                 Ok(AppData {
                     konan_pool,
                     brainiac_pool,

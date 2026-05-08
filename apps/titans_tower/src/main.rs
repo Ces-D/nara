@@ -1,5 +1,7 @@
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let token = std::env::var("TITANS_TOWER_DISCORD_BOT_TOKEN")
         .expect("Missing TITANS_TOWER_DISCORD_BOT_TOKEN");
 

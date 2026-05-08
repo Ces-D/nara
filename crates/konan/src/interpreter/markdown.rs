@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use crate::{
     interpreter::block_adornment::{
         HorizontalRule, ListItemBefore, TaskListBefore, horizontal_rule_print_command,
