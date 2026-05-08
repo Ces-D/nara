@@ -178,10 +178,7 @@ pub fn create_items(
 
 /// Fetches one item by id. `last_reviewed_at` is left unset; callers needing it
 /// should read `item_state` separately.
-pub fn get_item(
-    item_id: i64,
-    conn: &BrainiacDbPoolConnection,
-) -> Result<Item, BrainiacDbError> {
+pub fn get_item(item_id: i64, conn: &BrainiacDbPoolConnection) -> Result<Item, BrainiacDbError> {
     let item = conn.query_row(
         "SELECT id, category_id, front, back, created_at FROM item WHERE id = ?1",
         [item_id],

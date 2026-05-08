@@ -33,12 +33,46 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
         },
         pre_command: |ctx| {
             Box::pin(async move {
-                log::trace!("Executing command {}...", ctx.command().qualified_name);
+                log::info!(
+                    "Executing command {} (invoked by {})",
+                    ctx.command().qualified_name,
+                    ctx.author().name,
+                );
             })
         },
         post_command: |ctx| {
             Box::pin(async move {
-                log::trace!("Executed command {}!", ctx.command().qualified_name);
+                log::info!("Executed command {}", ctx.command().qualified_name);
+            })
+        },
+        on_error: |error| {
+            Box::pin(async move {
+                match error {
+                    poise::FrameworkError::Command { error, ctx, .. } => {
+                        log::error!("Command `{}` failed: {error}", ctx.command().qualified_name,);
+                        let _ = ctx.say(format!("Error: {error}")).await;
+                    }
+                    poise::FrameworkError::CommandPanic { payload, ctx, .. } => {
+                        log::error!(
+                            "Command `{}` panicked: {payload:?}",
+                            ctx.command().qualified_name,
+                        );
+                    }
+                    poise::FrameworkError::Setup { error, .. } => {
+                        log::error!("Framework setup failed: {error}");
+                    }
+                    poise::FrameworkError::EventHandler { error, event, .. } => {
+                        log::error!(
+                            "Event handler for `{}` failed: {error}",
+                            event.snake_case_name(),
+                        );
+                    }
+                    other => {
+                        if let Err(e) = poise::builtins::on_error(other).await {
+                            log::error!("Error while handling error: {e}");
+                        }
+                    }
+                }
             })
         },
         ..Default::default()
@@ -50,9 +84,15 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
 
     let framework = poise::FrameworkBuilder::default()
         .options(options)
-        .setup(|_ctx, ready, _framework| {
+        .setup(|ctx, ready, framework| {
             Box::pin(async move {
                 log::info!("Connected to Discord as {}", ready.user.name);
+                let commands = &framework.options().commands;
+                poise::builtins::register_globally(ctx, commands).await?;
+                log::info!(
+                    "Registered {} top-level slash commands globally",
+                    commands.len()
+                );
                 Ok(AppData {
                     konan_pool,
                     brainiac_pool,
