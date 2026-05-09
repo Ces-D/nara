@@ -194,12 +194,12 @@ pub async fn practice(
                 let pages = vec![practice_item_embed(&practice), answer_embed(&answer)];
                 match paginate_with_review(ctx, pages).await? {
                     Some(rating) => {
-                        let conn2 = ctx
+                        let mut conn2 = ctx
                             .data()
                             .brainiac_pool
                             .get()
                             .map_err(BrainiacDbError::from)?;
-                        database::rate_practice_item(practice.id, rating, &conn2)?;
+                        database::rate_practice_item(practice.id, rating, &mut conn2)?;
                     }
                     None => break,
                 }

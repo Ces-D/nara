@@ -56,6 +56,9 @@ fn memory_state_of(item: &ItemState) -> Option<MemoryState> {
 
 fn days_elapsed(item: &ItemState, now: DateTime<Utc>) -> u32 {
     item.last_reviewed_at
-        .map(|reviewed| now.signed_duration_since(reviewed).num_days().max(0) as u32)
+        .map(|reviewed| {
+            let secs = now.signed_duration_since(reviewed).num_seconds().max(0);
+            ((secs as f64) / 86_400.0).round() as u32
+        })
         .unwrap_or(0)
 }

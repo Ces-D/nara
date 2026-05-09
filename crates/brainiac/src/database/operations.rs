@@ -304,42 +304,16 @@ pub fn get_practice_item_answer(
 
 /// Records a rating for an item: runs FSRS to schedule the next review and
 /// writes the new stability, difficulty, due date, reps, and lapses.
+/// Read and write happen in a single transaction so concurrent ratings on the
+/// same item can't lose updates.
 pub fn rate_practice_item(
     item_id: i64,
     rating: Rating,
-    conn: &BrainiacDbPoolConnection,
+    conn: &mut BrainiacDbPoolConnection,
 ) -> Result<(), BrainiacDbError> {
-    let current = get_item_state(item_id, conn)?;
-    let now = Utc::now();
+    let tx = conn.transaction()?;
 
-    let scheduler = Scheduler::new()?;
-    let (memory, due_at) = scheduler.process_review(&current, rating, now)?;
-
-    let learned = is_learned(current.reps, current.lapses);
-    let reps = update_reps(rating, current.reps);
-    let lapses = update_lapses(rating, current.lapses, learned);
-
-    conn.execute(
-        "UPDATE item_state SET stability = ?1, difficulty = ?2, due_at = ?3, last_reviewed_at = ?4, reps = ?5, lapses = ?6 WHERE item_id = ?7",
-        (
-            memory.stability as f64,
-            memory.difficulty as f64,
-            due_at.timestamp(),
-            now.timestamp(),
-            reps,
-            lapses,
-            item_id,
-        ),
-    )?;
-    Ok(())
-}
-
-/// Loads the FSRS scheduling state for one item.
-fn get_item_state(
-    item_id: i64,
-    conn: &BrainiacDbPoolConnection,
-) -> Result<ItemState, BrainiacDbError> {
-    let state = conn.query_row(
+    let current = tx.query_row(
         "SELECT item_id, stability, difficulty, due_at, last_reviewed_at, reps, lapses \
          FROM item_state WHERE item_id = ?1",
         [item_id],
@@ -358,31 +332,52 @@ fn get_item_state(
             })
         },
     )?;
-    Ok(state)
+
+    let now = Utc::now();
+    let scheduler = Scheduler::new()?;
+    let (memory, due_at) = scheduler.process_review(&current, rating, now)?;
+
+    let learned = is_learned(current.reps, current.lapses);
+    let reps = update_reps(rating, current.reps);
+    let lapses = update_lapses(rating, current.lapses, learned);
+
+    tx.execute(
+        "UPDATE item_state SET stability = ?1, difficulty = ?2, due_at = ?3, last_reviewed_at = ?4, reps = ?5, lapses = ?6 WHERE item_id = ?7",
+        (
+            memory.stability as f64,
+            memory.difficulty as f64,
+            due_at.timestamp(),
+            now.timestamp(),
+            reps,
+            lapses,
+            item_id,
+        ),
+    )?;
+
+    tx.commit()?;
+    Ok(())
 }
 
-/// Increments the rep counter on a successful recall (Good or Easy).
+/// Increments the rep counter on any successful recall (Hard, Good, or Easy).
 fn update_reps(rating: Rating, current: u32) -> u32 {
     match rating {
-        Rating::Good | Rating::Easy => current + 1,
-        _ => current,
+        Rating::Hard | Rating::Good | Rating::Easy => current + 1,
+        Rating::Again => current,
     }
 }
 
-/// Increments the lapse counter when a learned item is forgotten (Hard or Again).
+/// Increments the lapse counter when a learned item is forgotten.
+/// Only `Again` is a forgetting event; Hard is a difficult-but-successful recall.
 /// Items still in the learning phase don't accrue lapses.
 fn update_lapses(rating: Rating, current: u32, is_learned: bool) -> u32 {
-    if is_learned {
-        match rating {
-            Rating::Hard | Rating::Again => current + 1,
-            _ => current,
-        }
+    if is_learned && matches!(rating, Rating::Again) {
+        current + 1
     } else {
         current
     }
 }
 
-/// An item is considered learned once its successful reps outnumber its lapses.
-fn is_learned(reps: u32, lapses: u32) -> bool {
-    reps > lapses
+/// An item is considered learned once it has been successfully recalled at least once.
+fn is_learned(reps: u32, _lapses: u32) -> bool {
+    reps > 0
 }
