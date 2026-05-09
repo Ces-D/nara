@@ -44,11 +44,10 @@ impl RongtaPrinter {
     }
 
     pub fn set_line_justification(&mut self, justification: Justification) {
-        let last_line = self
-            .lines
-            .last_mut()
-            .expect("Can only set justification to lines");
-        last_line.justification = justification
+        if self.lines.is_empty() {
+            self.add_new_line();
+        }
+        self.lines.last_mut().unwrap().justification = justification;
     }
 
     pub fn set_cached_text_size(&mut self, text_size: TextSize) {
@@ -65,25 +64,16 @@ impl RongtaPrinter {
     }
 
     pub fn print(&self, rows: Option<u32>, mut printer: AnyPrinter) -> escpos::errors::Result<()> {
-        let last_justification = Justification::default();
-        let last_text_size = TextSize::default();
-        let last_bold = false;
-        let last_page_code = page_code::CharPageCode::default();
+        let mut state = PrintState::default();
         if let Some(rows_per_page) = rows {
             let mut line_count = 0;
             for line in &self.lines {
-                print_line(
-                    line,
-                    &mut printer,
-                    last_justification,
-                    last_text_size,
-                    last_bold,
-                    last_page_code,
-                )?;
+                print_line(line, &mut printer, &mut state)?;
                 line_count += 1;
                 if line_count >= rows_per_page {
                     printer.print_cut()?;
                     line_count = 0;
+                    state = PrintState::default();
                 }
             }
             if line_count > 0 {
@@ -95,14 +85,7 @@ impl RongtaPrinter {
             }
         } else {
             for line in &self.lines {
-                print_line(
-                    line,
-                    &mut printer,
-                    last_justification,
-                    last_text_size,
-                    last_bold,
-                    last_page_code,
-                )?;
+                print_line(line, &mut printer, &mut state)?;
             }
             match self.cut {
                 true => printer.print_cut()?,
@@ -113,34 +96,39 @@ impl RongtaPrinter {
     }
 }
 
+#[derive(Default)]
+struct PrintState {
+    justification: Justification,
+    text_size: TextSize,
+    bold: bool,
+    page_code: page_code::CharPageCode,
+}
+
 fn print_line(
     line: &Line,
     printer: &mut AnyPrinter,
-    mut last_justification: Justification,
-    mut last_text_size: TextSize,
-    mut last_bold: bool,
-    mut last_page_code: page_code::CharPageCode,
+    state: &mut PrintState,
 ) -> escpos::errors::Result<()> {
-    if last_justification != line.justification {
+    if state.justification != line.justification {
         line.justification.command(printer)?;
-        last_justification = line.justification;
+        state.justification = line.justification;
     }
     for styled_char in line.chars.iter() {
-        if last_text_size != styled_char.text_size {
+        if state.text_size != styled_char.text_size {
             styled_char.text_size.command(printer)?;
-            last_text_size = styled_char.text_size;
+            state.text_size = styled_char.text_size;
         }
-        if last_bold != styled_char.bold {
+        if state.bold != styled_char.bold {
             printer.bold(styled_char.bold)?;
-            last_bold = styled_char.bold;
+            state.bold = styled_char.bold;
         }
         let normalized = page_code::normalize_char(styled_char.ch).unwrap_or(styled_char.ch);
         let required = page_code::char_page_code(normalized).ok_or_else(|| {
             escpos::errors::PrinterError::Input("Unable to locate char's page code".to_string())
         })?;
-        if last_page_code != required {
+        if state.page_code != required {
             printer.page_code(required.into())?;
-            last_page_code = required;
+            state.page_code = required;
         }
         printer.write(&normalized.to_string())?;
     }

@@ -9,13 +9,13 @@ use pulldown_cmark::{Options, Parser, Tag};
 
 pub struct MarkdownInterpreter {
     printer: RongtaPrinter,
-    last_list_index: Option<u64>,
+    list_indices: Vec<Option<u64>>,
 }
 impl MarkdownInterpreter {
     pub fn new(printer: RongtaPrinter) -> Self {
         Self {
             printer,
-            last_list_index: None,
+            list_indices: Vec::new(),
         }
     }
 
@@ -52,15 +52,19 @@ impl MarkdownInterpreter {
             }
             Tag::List(ordered_start) => {
                 log::debug!("Tag start: List (ordered_start={:?})", ordered_start);
-                self.last_list_index = *ordered_start;
+                self.list_indices.push(*ordered_start);
                 self.printer.add_new_line();
             }
             Tag::Item => {
-                log::debug!("Tag start: Item (list_index={:?})", self.last_list_index);
-                let before = match self.last_list_index {
+                let current = self.list_indices.last().copied().flatten();
+                log::debug!("Tag start: Item (list_index={:?})", current);
+                let before = match current {
                     Some(i) => {
                         let mut b = ListItemBefore::new_ordered(None);
                         b.next_index(i);
+                        if let Some(Some(n)) = self.list_indices.last_mut() {
+                            *n += 1;
+                        }
                         b
                     }
                     None => ListItemBefore::new_unordered(),
@@ -82,8 +86,22 @@ impl MarkdownInterpreter {
             match &event {
                 pulldown_cmark::Event::Start(tag) => self.handle_tag_start(tag),
                 pulldown_cmark::Event::End(tag) => {
+                    use pulldown_cmark::TagEnd;
                     log::debug!("Event: End({:?})", tag);
-                    self.printer.add_new_line();
+                    match tag {
+                        TagEnd::Paragraph
+                        | TagEnd::Heading(_)
+                        | TagEnd::BlockQuote(_)
+                        | TagEnd::CodeBlock
+                        | TagEnd::Item => {
+                            self.printer.add_new_line();
+                        }
+                        TagEnd::List(_) => {
+                            self.list_indices.pop();
+                            self.printer.add_new_line();
+                        }
+                        _ => {}
+                    }
                     continue;
                 }
                 pulldown_cmark::Event::Text(cow_str) => {

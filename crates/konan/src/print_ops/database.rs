@@ -91,12 +91,12 @@ fn next_run_unix(start: DateTime<Utc>, r_rule: RRule<Validated>) -> Option<i64> 
         .map(|v| v.timestamp())
 }
 
-/// Returns all schedules whose `next_run_unix` is >= now.
+/// Returns all schedules whose `next_run_unix` is <= now (i.e. past-due).
 pub fn get_due_schedules(conn: &KonanDbPoolConnection) -> Result<Vec<Schedule>, KonanDbError> {
     let now = Utc::now().timestamp();
     let mut stmt = conn.prepare(
         "SELECT id, name, task, r_rule, start_unix, next_run_unix \
-         FROM schedule WHERE next_run_unix >= :now",
+         FROM schedule WHERE next_run_unix <= :now",
     )?;
     let schedules = stmt
         .query_map(named_params! { ":now": now }, |row| {
