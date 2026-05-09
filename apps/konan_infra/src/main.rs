@@ -10,7 +10,7 @@ pub enum Commands {
 }
 
 #[derive(Debug, Parser)]
-#[clap(author, version, bin_name = "konan_pi", subcommand_required = true)]
+#[clap(author, version, subcommand_required = true)]
 pub struct App {
     #[clap(subcommand)]
     pub command: Commands,
@@ -18,6 +18,7 @@ pub struct App {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let app = App::parse();
     match app.command {
         Commands::Scheduler => scheduler::scheduler_loop().await,

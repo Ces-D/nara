@@ -33,6 +33,7 @@ impl FromSql for PrintTask {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum PrintJobStatus {
     Pending,
     Completed,

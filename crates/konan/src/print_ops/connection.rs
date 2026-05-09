@@ -27,15 +27,18 @@ fn run_migrations(conn: &KonanDbPoolConnection) -> Result<(), KonanDbError> {
 
 pub fn pool() -> Result<KonanDbPool, KonanDbError> {
     let db_path = print_job_database();
-    let is_new = !db_path.exists();
     let manager = SqliteConnectionManager::file(db_path).with_init(|c| {
-        c.execute_batch("PRAGMA foreign_keys = ON; PRAGMA recursive_triggers = ON;")
+        c.execute_batch(
+            "PRAGMA journal_mode = WAL;\
+             PRAGMA synchronous = NORMAL;\
+             PRAGMA busy_timeout = 5000;\
+             PRAGMA foreign_keys = ON;\
+             PRAGMA recursive_triggers = ON;",
+        )
     });
     let pool = r2d2::Pool::new(manager)?;
-    if is_new {
-        log::info!("New database detected, running migrations");
-        run_migrations(&pool.get()?)?;
-        log::info!("Migrations completed successfully");
-    }
+    // Migrations are idempotent (CREATE TABLE IF NOT EXISTS), so run on every
+    // startup. Any future non-idempotent migration will need a version table.
+    run_migrations(&pool.get()?)?;
     Ok(pool)
 }
