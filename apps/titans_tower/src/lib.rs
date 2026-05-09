@@ -57,6 +57,9 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
                             "Command `{}` panicked: {payload:?}",
                             ctx.command().qualified_name,
                         );
+                        let _ = ctx
+                            .say("Internal error — the command panicked. Check the logs.")
+                            .await;
                     }
                     poise::FrameworkError::Setup { error, .. } => {
                         log::error!("Framework setup failed: {error}");

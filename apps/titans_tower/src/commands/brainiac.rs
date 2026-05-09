@@ -28,10 +28,12 @@ where
 pub async fn list_categories(ctx: Context<'_>) -> Result<(), AppError> {
     ctx.defer().await?;
     let pool = ctx.data().brainiac_pool.clone();
-    let categories = run_db_blocking(pool, |conn| {
-        Ok(database::list_categories_with_tags(conn)?)
-    })
-    .await?;
+    let categories =
+        run_db_blocking(pool, |conn| Ok(database::list_categories_with_tags(conn)?)).await?;
+    if categories.is_empty() {
+        ctx.say("No categories created").await?;
+        return Ok(());
+    }
     for (category, tags) in categories {
         ctx.say(format!(
             "Category '{}' (id: {})",
