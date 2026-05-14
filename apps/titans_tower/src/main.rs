@@ -1,9 +1,13 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
+    http::{HeaderValue, Method, StatusCode, header},
     routing::{delete, get, patch, post},
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
+use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 
 mod db;
 mod discord;
@@ -12,6 +16,8 @@ mod ops;
 mod service;
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:3000";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const CORS_MAX_AGE: Duration = Duration::from_secs(3600);
 
 #[tokio::main]
 async fn main() {
@@ -34,6 +40,8 @@ async fn run() -> Result<(), error::ServiceError> {
             "invalid TITANS_TOWER_BIND_ADDR `{bind_addr_str}`: {e}"
         ))
     })?;
+
+    let allowed_origins = parse_allowed_origins()?;
 
     let konan_pool = konan_core::print_ops::pool().map_err(error::ServiceError::from)?;
     let brainiac_pool =
@@ -89,9 +97,21 @@ async fn run() -> Result<(), error::ServiceError> {
         )
         .with_state(brainiac_pool.clone());
 
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE])
+        .max_age(CORS_MAX_AGE)
+        .allow_origin(allowed_origins);
+
     let app = Router::new()
         .nest("/konan", konan_routes)
-        .nest("/brainiac", brainiac_routes);
+        .nest("/brainiac", brainiac_routes)
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+        ))
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     log::info!("HTTP listening on {bind_addr}");
@@ -107,4 +127,20 @@ async fn run() -> Result<(), error::ServiceError> {
 
     tokio::try_join!(bot, server)?;
     Ok(())
+}
+
+fn parse_allowed_origins() -> Result<Vec<HeaderValue>, error::ServiceError> {
+    std::env::var("TITANS_TOWER_ALLOWED_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|origin| {
+            origin.parse::<HeaderValue>().map_err(|e| {
+                error::ServiceError::Config(format!(
+                    "invalid origin `{origin}` in TITANS_TOWER_ALLOWED_ORIGINS: {e}"
+                ))
+            })
+        })
+        .collect()
 }

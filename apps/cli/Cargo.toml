@@ -11,5 +11,8 @@ thiserror.workspace = true
 clap.workspace = true
 rrule.workspace = true
 chrono.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json", "multipart"] }
+serde.workspace = true
+serde_json.workspace = true
 
 konan_core = { path = "../../crates/konan/" }
