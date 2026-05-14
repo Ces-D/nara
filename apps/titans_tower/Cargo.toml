@@ -1,5 +1,5 @@
 [package]
-name = "nara_server"
+name = "titans_tower"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
