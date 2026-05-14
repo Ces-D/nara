@@ -148,16 +148,19 @@ pub fn create_schedule(
     schedule: CreateSchedule,
 ) -> Result<usize, KonanDbError> {
     let task = serde_json::to_string(&schedule.task).map_err(task_serialize_error)?;
-    let r_rule = schedule.r_rule.to_string();
     let start = schedule.start.timestamp();
-    let next_run = next_run_unix(schedule.start, schedule.r_rule);
+    let r_rule = schedule
+        .r_rule
+        .validate(schedule.start.with_timezone(&rrule::Tz::America__New_York))
+        .map_err(rrule_parse_error)?;
+    let next_run = next_run_unix(schedule.start, r_rule.clone());
     let out = conn.execute(
         "INSERT INTO schedule (name, task, r_rule, start_unix, next_run_unix) \
          VALUES (:name, :task, :r_rule, :start_unix, :next_run_unix)",
         named_params! {
             ":name": schedule.name,
             ":task": task,
-            ":r_rule": r_rule,
+            ":r_rule": r_rule.to_string(),
             ":start_unix": start,
             ":next_run_unix": next_run,
         },
@@ -198,12 +201,25 @@ pub fn read_print_file(file_name: &str) -> io::Result<Vec<u8>> {
 }
 
 /// Writes a markdown file to the print file directory.
-/// Returns an error if `file_name` does not end with `.md`.
-pub fn upload_print_file(file_name: &str, content: &str) -> io::Result<()> {
+/// Returns an error if `file_name` does not end with `.md` or contains any
+/// path-component characters. Callers are still expected to validate input,
+/// but this check stops path-traversal even if a caller forgets.
+pub fn upload_print_file(file_name: &str, content: &[u8]) -> io::Result<()> {
     if !file_name.ends_with(".md") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("file must be a markdown file (.md): {file_name}"),
+        ));
+    }
+    if file_name.is_empty()
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.contains('\0')
+        || file_name.contains("..")
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid file name: {file_name}"),
         ));
     }
     let dir = print_file_directory();

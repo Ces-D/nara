@@ -127,6 +127,13 @@ pub struct CreateItem {
     pub created_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PracticeItemsFilters {
+    pub limit: u8,
+    pub category_ids: Option<Vec<i64>>,
+    pub tag_names: Option<Vec<String>>,
+}
+
 // ── Item State (FSRS scheduling) ──
 
 #[derive(Debug, Serialize, Deserialize)]

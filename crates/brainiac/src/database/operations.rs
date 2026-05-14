@@ -4,8 +4,8 @@ use crate::database::{
     BrainiacDbError,
     connection::BrainiacDbPoolConnection,
     models::{
-        Category, CategoryTag, CreateCategory, CreateItem, Item, ItemState, PracticeItem,
-        PracticeItemAnswer, Rating, UpdateItem,
+        Category, CategoryTag, CategoryTagLink, CreateCategory, CreateItem, Item, ItemState,
+        PracticeItem, PracticeItemAnswer, Rating, UpdateItem,
     },
 };
 use crate::scheduling::Scheduler;
@@ -94,19 +94,18 @@ fn prepare_tag(tag_name: String) -> String {
 
 /// Attaches a tag to a category, creating the tag row if needed. Idempotent.
 pub fn add_tag_to_category(
-    category_id: i64,
-    tag: String,
+    tag: CategoryTagLink,
     conn: &mut BrainiacDbPoolConnection,
 ) -> Result<(), BrainiacDbError> {
     let tx = conn.transaction()?;
-    let tag_name = prepare_tag(tag);
+    let tag_name = prepare_tag(tag.tag_name);
     tx.execute(
         "INSERT OR IGNORE INTO category_tag (name) VALUES (?1)",
         [&tag_name],
     )?;
     tx.execute(
         "INSERT OR IGNORE INTO category_tag_link (category_id, tag_name) VALUES (?1, ?2)",
-        (category_id, &tag_name),
+        (tag.category_id, &tag_name),
     )?;
     tx.commit()?;
     Ok(())

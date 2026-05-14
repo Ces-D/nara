@@ -1,7 +1,7 @@
 use crate::printer::{
+    AnyPrinter,
     element::{Justification, Line, PrintCommand, StyledChar, TextSize},
     page_code,
-    printer::AnyPrinter,
 };
 
 #[derive(Default)]

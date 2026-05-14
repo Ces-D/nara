@@ -37,8 +37,8 @@ impl Scheduler {
         };
 
         let interval_secs = (chosen.interval * 86400.0).round() as i64;
-        let due_at = now
-            + TimeDelta::try_seconds(interval_secs).ok_or_else(|| FSRSError::OptimalNotFound)?;
+        let due_at =
+            now + TimeDelta::try_seconds(interval_secs).ok_or(FSRSError::OptimalNotFound)?;
 
         Ok((chosen.memory, due_at))
     }

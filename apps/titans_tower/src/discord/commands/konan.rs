@@ -1,27 +1,14 @@
-use crate::{
-    AppError, Context,
+use crate::discord::{
+    Context,
     ui::{parse_date, parse_rrule},
 };
+use crate::error::ServiceError;
+use crate::ops;
 use chrono::{DateTime, Duration, Utc};
 use konan_core::{
-    print_ops::{
-        self, CreatePrintJob, CreateSchedule, KonanDbError, KonanDbPool, KonanDbPoolConnection,
-        PrintTask, Schedule,
-    },
+    print_ops::{CreateSchedule, PrintTask, Schedule},
     template::{BoxOutline, HabitTracker},
 };
-
-async fn run_db_blocking<F, T>(pool: KonanDbPool, f: F) -> Result<T, AppError>
-where
-    F: FnOnce(&mut KonanDbPoolConnection) -> Result<T, AppError> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(move || -> Result<T, AppError> {
-        let mut conn = pool.get().map_err(KonanDbError::from)?;
-        f(&mut conn)
-    })
-    .await?
-}
 
 #[poise::command(slash_command)]
 pub async fn template(
@@ -30,7 +17,7 @@ pub async fn template(
     #[description = "Lined background (default true)"] lined: Option<bool>,
     #[description = "Print-out Banner"] banner: Option<String>,
     #[description = "Print-out Date (format: MM-DD-YYYY)"] date: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     ctx.defer().await?;
     let mut draft = BoxOutline::default();
     draft
@@ -41,16 +28,8 @@ pub async fn template(
         let parsed = parse_date("date", &d)?;
         draft.set_date_banner(Some(parsed));
     }
-    let job = CreatePrintJob {
-        task: PrintTask::Outline(draft),
-        schedule_id: None,
-    };
-    let pool = ctx.data().konan_pool.clone();
-    run_db_blocking(pool, move |conn| {
-        print_ops::create_print_job(conn, job)?;
-        Ok(())
-    })
-    .await?;
+
+    ops::konan::create_outline(ctx.data().konan_pool.clone(), draft).await?;
     ctx.say("Created template").await?;
     Ok(())
 }
@@ -61,7 +40,7 @@ pub async fn tracker(
     #[description = "Habit name"] habit: String,
     #[description = "Start date MM-DD-YYYY (default today)"] start_date: Option<String>,
     #[description = "End date MM-DD-YYYY (default 2 weeks after start)"] end_date: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     ctx.defer().await?;
     let start = match start_date {
         Some(date) => parse_date("start_date", &date)?,
@@ -72,16 +51,7 @@ pub async fn tracker(
         None => start + Duration::weeks(2),
     };
     let draft = HabitTracker::new(habit, start, end);
-    let job = CreatePrintJob {
-        task: PrintTask::Tracker(draft),
-        schedule_id: None,
-    };
-    let pool = ctx.data().konan_pool.clone();
-    run_db_blocking(pool, move |conn| {
-        print_ops::create_print_job(conn, job)?;
-        Ok(())
-    })
-    .await?;
+    ops::konan::create_tracker(ctx.data().konan_pool.clone(), draft).await?;
     ctx.say(format!(
         "Created tracker from {} to {}",
         start.format("%m-%d-%Y"),
@@ -101,7 +71,7 @@ pub async fn schedule_template(
     #[description = "Lined background (default true)"] lined: Option<bool>,
     #[description = "Print-out Banner"] banner: Option<String>,
     #[description = "Print-out Date (format: MM-DD-YYYY)"] date: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     ctx.defer().await?;
     let mut draft = BoxOutline::default();
     draft
@@ -123,12 +93,7 @@ pub async fn schedule_template(
         r_rule,
         start,
     };
-    let pool = ctx.data().konan_pool.clone();
-    run_db_blocking(pool, move |conn| {
-        print_ops::create_schedule(conn, schedule)?;
-        Ok(())
-    })
-    .await?;
+    ops::konan::create_schedule(ctx.data().konan_pool.clone(), schedule).await?;
     ctx.say(format!("Created template schedule '{name}'"))
         .await?;
     Ok(())
@@ -145,7 +110,7 @@ pub async fn schedule_tracker(
     #[description = "Tracker end date MM-DD-YYYY (default 2 weeks after start)"] end_date: Option<
         String,
     >,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     ctx.defer().await?;
     let tracker_start = match start_date {
         Some(date) => parse_date("start_date", &date)?,
@@ -167,12 +132,7 @@ pub async fn schedule_tracker(
         r_rule,
         start,
     };
-    let pool = ctx.data().konan_pool.clone();
-    run_db_blocking(pool, move |conn| {
-        print_ops::create_schedule(conn, schedule)?;
-        Ok(())
-    })
-    .await?;
+    ops::konan::create_schedule(ctx.data().konan_pool.clone(), schedule).await?;
     ctx.say(format!("Created tracker schedule '{name}'"))
         .await?;
     Ok(())
@@ -209,10 +169,9 @@ fn format_schedule(s: &Schedule) -> String {
 }
 
 #[poise::command(slash_command)]
-pub async fn list_schedules(ctx: Context<'_>) -> Result<(), AppError> {
+pub async fn list_schedules(ctx: Context<'_>) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let pool = ctx.data().konan_pool.clone();
-    let schedules = run_db_blocking(pool, |conn| Ok(print_ops::list_schedules(conn)?)).await?;
+    let schedules = ops::konan::list_schedules(ctx.data().konan_pool.clone()).await?;
     if schedules.is_empty() {
         ctx.say("No schedules created.").await?;
     } else {
@@ -227,11 +186,9 @@ pub async fn list_schedules(ctx: Context<'_>) -> Result<(), AppError> {
 pub async fn delete_schedule(
     ctx: Context<'_>,
     #[description = "Id of the schedule"] id: i64,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let pool = ctx.data().konan_pool.clone();
-    let changed =
-        run_db_blocking(pool, move |conn| Ok(print_ops::delete_schedule(conn, id)?)).await?;
+    let changed = ops::konan::delete_schedule(ctx.data().konan_pool.clone(), id).await?;
     let msg = if changed == 0 {
         format!("No schedule found with id {id}.")
     } else {
@@ -253,6 +210,6 @@ pub async fn delete_schedule(
     ),
     subcommand_required
 )]
-pub async fn konan(_ctx: Context<'_>) -> Result<(), AppError> {
+pub async fn konan(_ctx: Context<'_>) -> Result<(), ServiceError> {
     Ok(())
 }

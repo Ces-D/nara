@@ -42,11 +42,9 @@ pub async fn scheduler_loop() {
             log::info!("Scheduled task {}: {}", row.id, row.name);
         }
 
-        if !tick_failed {
-            if let Err(e) = advance_schedules(&conn, due_schedules) {
-                log::error!("scheduler: failed to advance schedules: {e}");
-                tick_failed = true;
-            }
+        if !tick_failed && let Err(e) = advance_schedules(&conn, due_schedules) {
+            log::error!("scheduler: failed to advance schedules: {e}");
+            tick_failed = true;
         }
 
         drop(conn);

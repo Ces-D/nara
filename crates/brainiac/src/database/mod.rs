@@ -14,10 +14,12 @@ fn application_storage() -> PathBuf {
     let home = std::env::home_dir().expect("Unable to find HOME env variable");
     let p = home.join(".local/share/brainiac");
     if !p.exists() {
-        std::fs::create_dir_all(&p).expect(&format!(
-            "Unable to create brainiac storage directory at: {}",
-            p.display()
-        ));
+        std::fs::create_dir_all(&p).unwrap_or_else(|_| {
+            panic!(
+                "Unable to create brainiac storage directory at: {}",
+                p.display()
+            )
+        });
     }
     p
 }

@@ -1,17 +1,20 @@
 [package]
-name = "titans_tower"
+name = "nara_server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-log.workspace = true
 env_logger.workspace = true
-serenity.workspace = true
-poise.workspace = true
+log.workspace = true
 tokio.workspace = true
-thiserror.workspace = true
+axum.workspace = true
 chrono.workspace = true
+serde.workspace = true
+serenity.workspace = true
 rrule.workspace = true
+poise.workspace = true
+thiserror.workspace = true
+
 konan_core = { path = "../../crates/konan/" }
 brainiac_core = { path = "../../crates/brainiac/" }

@@ -1,31 +1,24 @@
+use crate::error::ServiceError;
 use serenity::prelude::{Client, GatewayIntents};
 
 mod commands;
 mod ui;
 
-pub type Context<'a> = poise::Context<'a, AppData, AppError>;
+pub use ui::FieldParseError;
+
+pub type Context<'a> = poise::Context<'a, AppData, ServiceError>;
 
 pub struct AppData {
     pub konan_pool: konan_core::print_ops::KonanDbPool,
     pub brainiac_pool: brainiac_core::database::connection::BrainiacDbPool,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum AppError {
-    #[error("discord error: {0}")]
-    Serenity(#[from] serenity::Error),
-    #[error("invalid input: {0}")]
-    Field(#[from] ui::FieldParseError),
-    #[error("print operation: {0}")]
-    PrintOperation(#[from] konan_core::print_ops::KonanDbError),
-    #[error("brainiac operation: {0}")]
-    BrainiacOperation(#[from] brainiac_core::database::BrainiacDbError),
-    #[error("task join error: {0}")]
-    Join(#[from] tokio::task::JoinError),
-}
-
-pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
-    let options: poise::FrameworkOptions<AppData, AppError> = poise::FrameworkOptions {
+pub async fn spawn_client(
+    token: String,
+    konan_pool: konan_core::print_ops::KonanDbPool,
+    brainiac_pool: brainiac_core::database::connection::BrainiacDbPool,
+) -> Result<Client, serenity::Error> {
+    let options: poise::FrameworkOptions<AppData, ServiceError> = poise::FrameworkOptions {
         commands: vec![commands::konan::konan(), commands::brainiac::brainiac()],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("-".into()),
@@ -50,7 +43,12 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
                 match error {
                     poise::FrameworkError::Command { error, ctx, .. } => {
                         log::error!("Command `{}` failed: {error}", ctx.command().qualified_name,);
-                        let _ = ctx.say(format!("Error: {error}")).await;
+                        let reply = if error.is_user_facing() {
+                            format!("Error: {error}")
+                        } else {
+                            "Internal error — check the logs.".to_string()
+                        };
+                        let _ = ctx.say(reply).await;
                     }
                     poise::FrameworkError::CommandPanic { payload, ctx, .. } => {
                         log::error!(
@@ -80,11 +78,6 @@ pub async fn spawn_client(token: String) -> Result<Client, serenity::Error> {
         },
         ..Default::default()
     };
-    let konan_pool =
-        konan_core::print_ops::pool().expect("Failed to open konan database connection");
-    let brainiac_pool = brainiac_core::database::connection::pool()
-        .expect("Failed to open brainiac database connection");
-
     let framework = poise::FrameworkBuilder::default()
         .options(options)
         .setup(|ctx, ready, framework| {

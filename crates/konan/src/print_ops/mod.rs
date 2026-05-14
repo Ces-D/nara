@@ -1,6 +1,6 @@
 use crate::template::{BoxOutline, HabitTracker};
 use chrono::{DateTime, Utc};
-use rrule::{RRule, Validated};
+use rrule::{RRule, Unvalidated};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 
 mod connection;
@@ -61,6 +61,7 @@ impl FromSql for PrintJobStatus {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Schedule {
     pub id: i64,
     pub name: String,
@@ -70,10 +71,11 @@ pub struct Schedule {
     pub next_run_unix: Option<i64>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct CreateSchedule {
     pub name: String,
     pub task: PrintTask,
-    pub r_rule: RRule<Validated>,
+    pub r_rule: RRule<Unvalidated>,
     pub start: DateTime<Utc>,
 }
 

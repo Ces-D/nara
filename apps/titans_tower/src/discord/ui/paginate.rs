@@ -1,4 +1,5 @@
-use crate::{AppError, Context};
+use crate::discord::Context;
+use crate::error::ServiceError;
 use brainiac_core::database::models::Rating;
 use serenity::all::{
     ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, CreateEmbed,
@@ -8,7 +9,7 @@ use serenity::all::{
 pub async fn paginate_with_review(
     ctx: Context<'_>,
     pages: Vec<CreateEmbed>,
-) -> Result<Option<Rating>, AppError> {
+) -> Result<Option<Rating>, ServiceError> {
     let ctx_id = ctx.id();
     let prev_id = format!("{}prev", ctx_id);
     let next_id = format!("{}next", ctx_id);
@@ -95,7 +96,7 @@ async fn handle_review_press(
     press: &ComponentInteraction,
     pages: &[CreateEmbed],
     current_page: usize,
-) -> Result<(), AppError> {
+) -> Result<(), ServiceError> {
     press
         .create_response(
             ctx.serenity_context(),

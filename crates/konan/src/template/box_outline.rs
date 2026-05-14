@@ -18,8 +18,8 @@ impl BoxOutline {
         self.lined
     }
 
-    pub fn banner(&self) -> Option<&str> {
-        self.banner.as_deref()
+    pub fn banner(&self) -> Option<String> {
+        self.banner.clone()
     }
 
     pub fn date(&self) -> Option<DateTime<Utc>> {

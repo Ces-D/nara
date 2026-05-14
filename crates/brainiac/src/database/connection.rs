@@ -9,7 +9,7 @@ const BRAINIAC_MIGRATIONS: &[&str] = &[include_str!("migrations/initialize_table
 
 fn run_migrations(conn: &BrainiacDbPoolConnection) -> rusqlite::Result<()> {
     for migration in BRAINIAC_MIGRATIONS {
-        conn.execute_batch(*migration)?;
+        conn.execute_batch(migration)?;
     }
     Ok(())
 }
