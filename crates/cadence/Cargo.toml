@@ -1,5 +1,5 @@
 [package]
-name = "konan_core"
+name = "cadence_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,13 +7,12 @@ authors.workspace = true
 [dependencies]
 async-trait.workspace = true
 log.workspace = true
-escpos.workspace = true
-rand.workspace = true
 chrono.workspace = true
-pulldown-cmark.workspace = true
-tokio.workspace = true
-thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-cadence_core = { path = "../cadence/" }
+rusqlite.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+rrule.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

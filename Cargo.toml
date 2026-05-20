@@ -3,9 +3,9 @@ resolver = "2"
 members = [
   "crates/konan",
   "apps/titans_tower",
-  "apps/konan_infra",
   "crates/brainiac",
   "apps/cli",
+  "crates/cadence",
 ]
 
 [workspace.package]
@@ -14,6 +14,7 @@ edition = "2024"
 authors = ["Cesar <58753718+Ces-D@users.noreply.github.com>"]
 
 [workspace.dependencies]
+async-trait = "0.1.89"
 escpos = { version = "0.17.0", features = [
   "barcodes",
   "codes_2d",
@@ -36,7 +37,7 @@ tokio = { version = "1.51.0", features = [
   "time",
 ] }
 thiserror = "2.0.18"
-rusqlite = "0.39.0"
+rusqlite = { version = "0.39.0", features = ["serde_json"] }
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.33.0"
 rrule = { version = "0.14.0", features = ["serde"] }

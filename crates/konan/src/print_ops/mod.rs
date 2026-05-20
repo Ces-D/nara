@@ -1,17 +1,39 @@
-use crate::template::{BoxOutline, HabitTracker};
-use chrono::{DateTime, Utc};
-use rrule::{RRule, Unvalidated};
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use std::{io, path::PathBuf};
 
-mod connection;
-mod database;
+mod print;
+mod schedulable;
 
-pub use connection::{KonanDbError, KonanDbPool, KonanDbPoolConnection, pool};
-pub use database::{
-    advance_schedules, create_print_job, create_schedule, delete_schedule, get_due_schedules,
-    get_pending_print_job, list_schedules, read_print_file, update_print_job_status,
-    upload_print_file,
+pub use print::KonanPrintChannel;
+pub use schedulable::{
+    FileBuildHandler, KonanPrintDeliverHandler, OutlineBuildHandler, TrackerBuildHandler,
 };
+
+pub const TASK_OUTLINE_BUILD: &str = "konan.outline.build";
+pub const TASK_TRACKER_BUILD: &str = "konan.tracker.build";
+pub const TASK_FILE_BUILD: &str = "konan.file.build";
+pub const TASK_PRINT_DELIVER: &str = "konan.print.deliver";
+pub const CHANNEL_PRINT: &str = "konan.print";
+
+pub const MIME_OUTLINE: &str = "application/x-konan-outline";
+pub const MIME_TRACKER: &str = "application/x-konan-tracker";
+
+/// Tagged payload handed from a build handler to the deliver handler.
+/// Carries enough information for the deliver step to reconstruct the right
+/// [`cadence_core::channels::Artifact`] variant for [`KonanPrintChannel`].
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum KonanDeliverPayload {
+    Outline {
+        outline: crate::template::BoxOutline,
+    },
+    Tracker {
+        tracker: crate::template::HabitTracker,
+    },
+    File {
+        file_name: String,
+        rows: Option<u32>,
+    },
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct PrintFileTask {
@@ -21,73 +43,67 @@ pub struct PrintFileTask {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub enum PrintTask {
-    Outline(BoxOutline),
-    Tracker(HabitTracker),
+    Outline(crate::template::BoxOutline),
+    Tracker(crate::template::HabitTracker),
     File(PrintFileTask),
 }
 
-impl FromSql for PrintTask {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        let s = String::column_result(value)?;
-        serde_json::from_str(&s).map_err(|e| FromSqlError::Other(Box::new(e)))
+/// Location of application_storage
+fn application_storage() -> PathBuf {
+    let home = std::env::home_dir().expect("Unable to find HOME env variable");
+    let p = home.join(".local/share/konan");
+    if !p.exists() {
+        std::fs::create_dir_all(&p).unwrap_or_else(|_| {
+            panic!(
+                "Unable to create konan storage directory at: {}",
+                p.display()
+            )
+        });
     }
+    p
 }
 
-#[derive(Clone, Copy)]
-pub enum PrintJobStatus {
-    Pending,
-    Completed,
-    Failed,
-}
-
-impl PrintJobStatus {
-    fn as_int(&self) -> i64 {
-        match self {
-            Self::Pending => 0,
-            Self::Completed => 1,
-            Self::Failed => 2,
-        }
+pub(crate) fn print_file_directory() -> PathBuf {
+    let p = application_storage().join("files");
+    if !p.exists() {
+        std::fs::create_dir_all(&p).unwrap_or_else(|_| {
+            panic!(
+                "Unable to create konan file storage directory at: {}",
+                p.display()
+            )
+        })
     }
+    p
 }
 
-impl FromSql for PrintJobStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match i64::column_result(value)? {
-            0 => Ok(Self::Pending),
-            1 => Ok(Self::Completed),
-            2 => Ok(Self::Failed),
-            n => Err(FromSqlError::OutOfRange(n)),
-        }
+/// Reads a file from the print file directory by name.
+pub fn read_print_file(file_name: &str) -> io::Result<Vec<u8>> {
+    let path = print_file_directory().join(file_name);
+    std::fs::read(&path)
+}
+
+/// Writes a markdown file to the print file directory.
+/// Returns an error if `file_name` does not end with `.md` or contains any
+/// path-component characters. Callers are still expected to validate input,
+/// but this check stops path-traversal even if a caller forgets.
+pub fn upload_print_file(file_name: &str, content: &[u8]) -> io::Result<()> {
+    if !file_name.ends_with(".md") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("file must be a markdown file (.md): {file_name}"),
+        ));
     }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-pub struct Schedule {
-    pub id: i64,
-    pub name: String,
-    pub task: PrintTask,
-    pub r_rule: String,
-    pub start_unix: i64,
-    pub next_run_unix: Option<i64>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-pub struct CreateSchedule {
-    pub name: String,
-    pub task: PrintTask,
-    pub r_rule: RRule<Unvalidated>,
-    pub start: DateTime<Utc>,
-}
-
-pub struct PrintJob {
-    pub id: i64,
-    schedule_id: Option<i64>,
-    pub task: PrintTask,
-    created_at_unix: i64,
-    status: PrintJobStatus,
-}
-
-pub struct CreatePrintJob {
-    pub task: PrintTask,
-    pub schedule_id: Option<i64>,
+    if file_name.is_empty()
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.contains('\0')
+        || file_name.contains("..")
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid file name: {file_name}"),
+        ));
+    }
+    let dir = print_file_directory();
+    std::fs::write(dir.join(file_name), content)
 }
