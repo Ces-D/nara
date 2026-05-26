@@ -16,3 +16,4 @@ serde.workspace = true
 serde_json.workspace = true
 
 konan_core = { path = "../../crates/konan/" }
+cadence_core = { path = "../../crates/cadence/" }

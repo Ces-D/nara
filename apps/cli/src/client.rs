@@ -1,7 +1,8 @@
 use std::path::Path;
 
+use cadence_core::database::{CreateSchedule, Schedule};
 use konan_core::{
-    print_ops::{CreateSchedule, PrintFileTask, Schedule},
+    print_ops::PrintFileTask,
     template::{BoxOutline, HabitTracker},
 };
 use reqwest::{
@@ -13,12 +14,12 @@ use crate::error::CliError;
 
 pub const BASE_URL_ENV: &str = "NARA_SERVER_URL";
 
-pub struct TitansTowerClient {
+pub struct NaraClient {
     http: Client,
     base_url: String,
 }
 
-impl TitansTowerClient {
+impl NaraClient {
     pub fn from_env() -> Result<Self, CliError> {
         let raw = std::env::var(BASE_URL_ENV).map_err(|_| CliError::MissingEnv(BASE_URL_ENV))?;
         let trimmed = raw.trim().trim_end_matches('/');

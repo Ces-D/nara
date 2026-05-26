@@ -1,38 +1,39 @@
 use crate::error::{ServiceError, ServiceResult};
-use crate::ops;
 use axum::{
     Json,
     extract::{Multipart, Path, State},
     http::StatusCode,
 };
+use cadence_core::database::{CreateSchedule, Schedule};
 use konan_core::{
-    print_ops::{CreateSchedule, KonanDbPool, PrintFileTask, Schedule},
+    KonanScheduler,
+    print_ops::{self, PrintFileTask},
     template::{BoxOutline, HabitTracker},
 };
 
 pub const MAX_UPLOAD_BYTES: usize = 1024 * 1024;
 
 pub async fn print_outline(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
     Json(payload): Json<BoxOutline>,
 ) -> ServiceResult<StatusCode> {
-    ops::konan::create_outline(pool, payload).await?;
+    scheduler.print_outline(payload).await?;
     Ok(StatusCode::CREATED)
 }
 
 pub async fn print_tracker(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
     Json(payload): Json<HabitTracker>,
 ) -> ServiceResult<StatusCode> {
-    ops::konan::create_tracker(pool, payload).await?;
+    scheduler.print_tracker(payload).await?;
     Ok(StatusCode::CREATED)
 }
 
 pub async fn print_file(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
     Json(payload): Json<PrintFileTask>,
 ) -> ServiceResult<StatusCode> {
-    ops::konan::create_file_job(pool, payload).await?;
+    scheduler.print_file(payload).await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -65,7 +66,8 @@ pub async fn upload_file(mut multipart: Multipart) -> ServiceResult<StatusCode> 
             ));
         }
 
-        ops::konan::upload_file(file_name, data).await?;
+        tokio::task::spawn_blocking(move || print_ops::upload_print_file(&file_name, &data))
+            .await??;
         uploaded += 1;
     }
 
@@ -100,28 +102,24 @@ fn sanitize_upload_filename(raw: &str) -> Result<String, String> {
 }
 
 pub async fn create_print_schedule(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
     Json(payload): Json<CreateSchedule>,
 ) -> ServiceResult<Json<i64>> {
-    let count = ops::konan::create_schedule(pool, payload).await?;
-    Ok(Json(count as i64))
+    let id = scheduler.create_schedule_raw(payload).await?;
+    Ok(Json(id))
 }
 
 pub async fn list_scheduled_print_tasks(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
 ) -> ServiceResult<Json<Vec<Schedule>>> {
-    let schedules = ops::konan::list_schedules(pool).await?;
+    let schedules = scheduler.list_schedules().await?;
     Ok(Json(schedules))
 }
 
 pub async fn delete_scheduled_print_task(
-    State(pool): State<KonanDbPool>,
+    State(scheduler): State<KonanScheduler>,
     Path(id): Path<i64>,
 ) -> ServiceResult<StatusCode> {
-    let changed = ops::konan::delete_schedule(pool, id).await?;
-    if changed == 0 {
-        Ok(StatusCode::NOT_FOUND)
-    } else {
-        Ok(StatusCode::NO_CONTENT)
-    }
+    scheduler.delete_schedule(id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

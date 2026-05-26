@@ -9,13 +9,13 @@ pub use ui::FieldParseError;
 pub type Context<'a> = poise::Context<'a, AppData, ServiceError>;
 
 pub struct AppData {
-    pub konan_pool: konan_core::print_ops::KonanDbPool,
+    pub konan: konan_core::KonanScheduler,
     pub brainiac_pool: brainiac_core::database::connection::BrainiacDbPool,
 }
 
 pub async fn spawn_client(
     token: String,
-    konan_pool: konan_core::print_ops::KonanDbPool,
+    konan: konan_core::KonanScheduler,
     brainiac_pool: brainiac_core::database::connection::BrainiacDbPool,
 ) -> Result<Client, serenity::Error> {
     let options: poise::FrameworkOptions<AppData, ServiceError> = poise::FrameworkOptions {
@@ -90,7 +90,7 @@ pub async fn spawn_client(
                     commands.len()
                 );
                 Ok(AppData {
-                    konan_pool,
+                    konan,
                     brainiac_pool,
                 })
             })

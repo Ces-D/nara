@@ -1,5 +1,5 @@
 [package]
-name = "titans_tower"
+name = "nara_server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -11,6 +11,7 @@ tokio.workspace = true
 axum.workspace = true
 chrono.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 serenity.workspace = true
 rrule.workspace = true
 poise.workspace = true
@@ -19,3 +20,4 @@ tower-http.workspace = true
 
 konan_core = { path = "../../crates/konan/" }
 brainiac_core = { path = "../../crates/brainiac/" }
+cadence_core = { path = "../../crates/cadence/" }

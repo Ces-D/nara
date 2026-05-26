@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderValue, Method, StatusCode, header},
     routing::{delete, get, patch, post},
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -23,29 +23,38 @@ const CORS_MAX_AGE: Duration = Duration::from_secs(3600);
 async fn main() {
     env_logger::init();
     if let Err(e) = run().await {
-        eprintln!("titans_tower: {e}");
+        eprintln!("nara server: {e}");
         std::process::exit(1);
     }
 }
 
 async fn run() -> Result<(), error::ServiceError> {
-    let token = std::env::var("TITANS_TOWER_DISCORD_BOT_TOKEN").map_err(|_| {
-        error::ServiceError::Config("missing TITANS_TOWER_DISCORD_BOT_TOKEN".into())
-    })?;
+    let token = std::env::var("NARA_SERVER_DISCORD_BOT_TOKEN")
+        .map_err(|_| error::ServiceError::Config("missing NARA_SERVER_DISCORD_BOT_TOKEN".into()))?;
 
     let bind_addr_str =
-        std::env::var("TITANS_TOWER_BIND_ADDR").unwrap_or_else(|_| DEFAULT_BIND_ADDR.to_string());
+        std::env::var("NARA_SERVER_BIND_ADDR").unwrap_or_else(|_| DEFAULT_BIND_ADDR.to_string());
     let bind_addr: SocketAddr = bind_addr_str.parse().map_err(|e| {
         error::ServiceError::Config(format!(
-            "invalid TITANS_TOWER_BIND_ADDR `{bind_addr_str}`: {e}"
+            "invalid NARA_SERVER_BIND_ADDR `{bind_addr_str}`: {e}"
         ))
     })?;
 
     let allowed_origins = parse_allowed_origins()?;
 
-    let konan_pool = konan_core::print_ops::pool().map_err(error::ServiceError::from)?;
     let brainiac_pool =
         brainiac_core::database::connection::pool().map_err(error::ServiceError::from)?;
+    let cadence_pool = cadence_core::database::pool()?;
+    let konan = konan_core::KonanScheduler::new(cadence_pool.clone());
+
+    let mut tasks = cadence_core::registry::TaskRegistry::default();
+    konan_core::KonanScheduler::register_handlers(&mut tasks);
+
+    let mut channels = cadence_core::channels::ChannelRegistry::default();
+    konan_core::KonanScheduler::register_channels(&mut channels);
+
+    let tasks = Arc::new(tasks);
+    let channels = Arc::new(channels);
 
     let konan_routes = Router::new()
         .route("/print/outline", post(service::konan::print_outline))
@@ -65,7 +74,7 @@ async fn run() -> Result<(), error::ServiceError> {
             "/schedules/{id}",
             delete(service::konan::delete_scheduled_print_task),
         )
-        .with_state(konan_pool.clone());
+        .with_state(konan.clone());
 
     let brainiac_routes = Router::new()
         .route(
@@ -116,7 +125,7 @@ async fn run() -> Result<(), error::ServiceError> {
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     log::info!("HTTP listening on {bind_addr}");
 
-    let mut client = discord::spawn_client(token, konan_pool, brainiac_pool).await?;
+    let mut client = discord::spawn_client(token, konan, brainiac_pool).await?;
 
     let bot = async move { client.start().await.map_err(error::ServiceError::from) };
     let server = async move {
@@ -124,13 +133,18 @@ async fn run() -> Result<(), error::ServiceError> {
             .await
             .map_err(error::ServiceError::from)
     };
+    let executor_pool = cadence_pool.clone();
+    let executor = async move {
+        cadence_core::executor::run(executor_pool, tasks, channels).await;
+        Ok::<(), error::ServiceError>(())
+    };
 
-    tokio::try_join!(bot, server)?;
+    tokio::try_join!(bot, server, executor)?;
     Ok(())
 }
 
 fn parse_allowed_origins() -> Result<Vec<HeaderValue>, error::ServiceError> {
-    std::env::var("TITANS_TOWER_ALLOWED_ORIGINS")
+    std::env::var("NARA_SERVER_ALLOWED_ORIGINS")
         .unwrap_or_default()
         .split(',')
         .map(str::trim)
@@ -138,7 +152,7 @@ fn parse_allowed_origins() -> Result<Vec<HeaderValue>, error::ServiceError> {
         .map(|origin| {
             origin.parse::<HeaderValue>().map_err(|e| {
                 error::ServiceError::Config(format!(
-                    "invalid origin `{origin}` in TITANS_TOWER_ALLOWED_ORIGINS: {e}"
+                    "invalid origin `{origin}` in NARA_SERVER_ALLOWED_ORIGINS: {e}"
                 ))
             })
         })

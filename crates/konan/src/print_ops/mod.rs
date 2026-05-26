@@ -1,3 +1,5 @@
+use crate::template::{BoxOutline, HabitTracker};
+use cadence_core::registry::Task;
 use std::{io, path::PathBuf};
 
 mod print;
@@ -8,14 +10,26 @@ pub use schedulable::{
     FileBuildHandler, KonanPrintDeliverHandler, OutlineBuildHandler, TrackerBuildHandler,
 };
 
-pub const TASK_OUTLINE_BUILD: &str = "konan.outline.build";
-pub const TASK_TRACKER_BUILD: &str = "konan.tracker.build";
-pub const TASK_FILE_BUILD: &str = "konan.file.build";
-pub const TASK_PRINT_DELIVER: &str = "konan.print.deliver";
 pub const CHANNEL_PRINT: &str = "konan.print";
 
 pub const MIME_OUTLINE: &str = "application/x-konan-outline";
 pub const MIME_TRACKER: &str = "application/x-konan-tracker";
+
+impl Task for BoxOutline {
+    const TASK_TYPE: &'static str = "konan.outline.build";
+}
+
+impl Task for HabitTracker {
+    const TASK_TYPE: &'static str = "konan.tracker.build";
+}
+
+impl Task for PrintFileTask {
+    const TASK_TYPE: &'static str = "konan.file.build";
+}
+
+impl Task for KonanDeliverPayload {
+    const TASK_TYPE: &'static str = "konan.print.deliver";
+}
 
 /// Tagged payload handed from a build handler to the deliver handler.
 /// Carries enough information for the deliver step to reconstruct the right
@@ -24,10 +38,10 @@ pub const MIME_TRACKER: &str = "application/x-konan-tracker";
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum KonanDeliverPayload {
     Outline {
-        outline: crate::template::BoxOutline,
+        outline: BoxOutline,
     },
     Tracker {
-        tracker: crate::template::HabitTracker,
+        tracker: HabitTracker,
     },
     File {
         file_name: String,
@@ -46,6 +60,33 @@ pub enum PrintTask {
     Outline(crate::template::BoxOutline),
     Tracker(crate::template::HabitTracker),
     File(PrintFileTask),
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct TaskEnvelope {
+    pub task_type: String,
+    pub payload: serde_json::Value,
+}
+
+impl TaskEnvelope {
+    fn from_task<T: Task + serde::Serialize>(task: T) -> serde_json::Result<Self> {
+        Ok(Self {
+            task_type: T::TASK_TYPE.to_string(),
+            payload: serde_json::to_value(task)?,
+        })
+    }
+
+    pub fn outline(o: BoxOutline) -> serde_json::Result<Self> {
+        Self::from_task(o)
+    }
+
+    pub fn tracker(t: HabitTracker) -> serde_json::Result<Self> {
+        Self::from_task(t)
+    }
+
+    pub fn file(f: PrintFileTask) -> serde_json::Result<Self> {
+        Self::from_task(f)
+    }
 }
 
 /// Location of application_storage

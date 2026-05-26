@@ -306,13 +306,15 @@ pub async fn get_children_of(
 
 // ~~~~~~~~~~~~ schedule ops
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSchedule {
     pub name: String,
     pub task_type: String,
     pub payload: serde_json::Value,
     pub rrule: Option<RRule<Unvalidated>>,
+    #[serde(default, with = "chrono::serde::ts_seconds_option")]
     pub at_unix: Option<DateTime<Utc>>,
+    #[serde(with = "chrono::serde::ts_seconds")]
     pub start_unix: DateTime<Utc>,
 }
 

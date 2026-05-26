@@ -15,5 +15,5 @@ tokio.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
+rrule.workspace = true
 cadence_core = { path = "../cadence/" }

@@ -7,7 +7,7 @@ use crate::{
 use chrono::Utc;
 use std::{sync::Arc, time::Duration};
 
-pub async fn worker_tick(
+async fn worker_tick(
     db: &database::CadenceDBPool,
     registry: &TaskRegistry,
     channels: &ChannelRegistry,
@@ -16,20 +16,19 @@ pub async fn worker_tick(
         return Ok(());
     };
 
-    let Some(handler) = registry.get(&job.task_type) else {
-        database::mark_job_failed(db, job.id).await?;
-        log::warn!("no handler for task_type={}", job.task_type);
-        return Ok(());
-    };
-
     let ctx = JobContext {
         job_id: job.id,
-        payload: job.payload,
         artifact_ref: job.artifact_ref,
         channels,
         db,
     };
-    let outcome = handler.run(&ctx).await.unwrap_or_else(JobOutcome::Failed);
+
+    let Some(result) = registry.dispatch(&job.task_type, job.payload, &ctx).await else {
+        database::mark_job_failed(db, job.id).await?;
+        log::warn!("no handler for task_type={}", job.task_type);
+        return Ok(());
+    };
+    let outcome = result.unwrap_or_else(JobOutcome::Failed);
     match outcome {
         JobOutcome::Done => database::mark_job_completed(db, job.id).await?,
         JobOutcome::Spawn {
@@ -57,7 +56,7 @@ pub async fn worker_tick(
     Ok(())
 }
 
-pub async fn scheduler_tick(db: &database::CadenceDBPool) -> Result<(), CadenceError> {
+async fn scheduler_tick(db: &database::CadenceDBPool) -> Result<(), CadenceError> {
     let due = database::get_due_schedules(db).await?;
     for s in due {
         let job = database::CreateJob {

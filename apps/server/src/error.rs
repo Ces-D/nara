@@ -2,7 +2,7 @@ use crate::discord;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use brainiac_core::database::BrainiacDbError;
-use konan_core::print_ops::KonanDbError;
+use cadence_core::error::CadenceError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -13,15 +13,17 @@ pub enum ServiceError {
     #[error("invalid input: {0}")]
     Field(#[from] discord::FieldParseError),
     #[error(transparent)]
-    Konan(#[from] KonanDbError),
-    #[error(transparent)]
     Brainiac(#[from] BrainiacDbError),
+    #[error(transparent)]
+    Cadence(#[from] CadenceError),
     #[error("task join error: {0}")]
     Join(#[from] tokio::task::JoinError),
     #[error(transparent)]
     Multipart(#[from] axum::extract::multipart::MultipartError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    SerdeJson(#[from] serde_json::Error),
     #[error("bad request: {0}")]
     BadRequest(String),
     #[error("payload too large: {0}")]
@@ -35,12 +37,13 @@ impl ServiceError {
         match self {
             Self::BadRequest(_) | Self::Field(_) | Self::Multipart(_) => StatusCode::BAD_REQUEST,
             Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::Konan(_)
-            | Self::Brainiac(_)
+            Self::Brainiac(_)
+            | Self::Cadence(_)
             | Self::Io(_)
             | Self::Join(_)
             | Self::Axum(_)
             | Self::Serenity(_)
+            | Self::SerdeJson(_)
             | Self::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

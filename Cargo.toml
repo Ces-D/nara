@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "crates/konan",
-  "apps/titans_tower",
+  "apps/server",
   "crates/brainiac",
   "apps/cli",
   "crates/cadence",

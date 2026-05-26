@@ -1,21 +1,22 @@
+use cadence_core::database::CreateSchedule;
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use konan_core::{
-    print_ops::{CreateSchedule, PrintFileTask, PrintTask},
+    print_ops::{PrintFileTask, TaskEnvelope},
     template::{BoxOutline, HabitTracker},
 };
 use rrule::{RRule, Unvalidated};
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::client::TitansTowerClient;
+use crate::client::NaraClient;
 use crate::error::CliError;
 
 #[derive(Debug, Subcommand)]
 pub enum KonanCommand {
     #[clap(
         about = "Create a recurring scheduled print task on the server",
-        long_about = "Create a recurring scheduled print task on the server. The task argument is a JSON-encoded PrintTask ({\"Outline\":..}, {\"Tracker\":..}, or {\"File\":..}). Pass `-` to read the JSON from stdin so it can be piped from another konan subcommand invoked with `--task true`."
+        long_about = "Create a recurring scheduled print task on the server. The json argument is a TaskEnvelope ({\"task_type\":..,\"payload\":..}) — pass `-` to read it from stdin so it can be piped from another konan subcommand invoked with `--json`."
     )]
     CreateSchedule {
         #[clap(help = "Human-readable name for the schedule")]
@@ -28,8 +29,8 @@ pub enum KonanCommand {
         r_rule: String,
         #[clap(short, long, help = "First run time (RFC 3339 / ISO 8601, UTC)")]
         start: DateTime<Utc>,
-        #[clap(short, long, help = "PrintTask JSON, or `-` to read from stdin")]
-        task: String,
+        #[clap(short, long, help = "TaskEnvelope JSON, or `-` to read from stdin")]
+        json: String,
     },
     #[clap(about = "Delete a scheduled print task by id")]
     DeleteSchedule {
@@ -53,9 +54,9 @@ pub enum KonanCommand {
         #[clap(
             short,
             long,
-            help = "When true, emit the PrintTask JSON to stdout instead of sending it to the server"
+            help = "Emit the TaskEnvelope JSON to stdout instead of sending it to the server"
         )]
-        task: Option<bool>,
+        json: bool,
     },
     #[clap(about = "Print (or emit) a box outline page")]
     Outline {
@@ -70,13 +71,13 @@ pub enum KonanCommand {
         #[clap(
             short,
             long,
-            help = "When true, emit the PrintTask JSON to stdout instead of sending it to the server"
+            help = "Emit the TaskEnvelope JSON to stdout instead of sending it to the server"
         )]
-        task: Option<bool>,
+        json: bool,
     },
     #[clap(
         about = "Print (or emit) a markdown file",
-        long_about = "Print a markdown file. In immediate mode the local file is first uploaded to the server, then queued for printing. With `--task true`, only emits the PrintTask JSON (referencing the file's basename) and skips the upload."
+        long_about = "Print a markdown file. In immediate mode the local file is first uploaded to the server, then queued for printing. With `--json`, only emits the TaskEnvelope JSON (referencing the file's basename) and skips the upload."
     )]
     File {
         #[clap(help = "Local path to the markdown file to upload and print")]
@@ -86,35 +87,35 @@ pub enum KonanCommand {
         #[clap(
             short,
             long,
-            help = "When true, emit the PrintTask JSON (referencing the file's basename) to stdout without uploading or printing"
+            help = "Emit the TaskEnvelope JSON (referencing the file's basename) to stdout without uploading or printing"
         )]
-        task: Option<bool>,
+        json: bool,
     },
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Konan subcommands talk to the /konan/* routes on the titans_tower server")]
+#[clap(about = "Konan subcommands talk to the /konan/* routes on the nara server")]
 pub struct KonanArgs {
     #[clap(subcommand)]
     pub command: KonanCommand,
 }
 
-pub fn handle_konan_command(args: KonanArgs, client: &TitansTowerClient) -> Result<(), CliError> {
+pub fn handle_konan_command(args: KonanArgs, client: &NaraClient) -> Result<(), CliError> {
     match args.command {
         KonanCommand::Outline {
             date,
             banner,
             rows,
             lined,
-            task,
+            json,
         } => {
             let mut bo = BoxOutline::default();
             bo.set_rows(rows.unwrap_or(30))
                 .set_lined(lined)
                 .set_banner(banner)
                 .set_date_banner(date);
-            if task == Some(true) {
-                println!("{}", serde_json::to_string(&PrintTask::Outline(bo))?);
+            if json {
+                println!("{}", serde_json::to_string(&TaskEnvelope::outline(bo)?)?);
             } else {
                 client.print_outline(&bo)?;
             }
@@ -123,16 +124,16 @@ pub fn handle_konan_command(args: KonanArgs, client: &TitansTowerClient) -> Resu
             habit,
             start_date,
             end_date,
-            task,
+            json,
         } => {
             let ht = HabitTracker::new(habit, start_date, end_date);
-            if task == Some(true) {
-                println!("{}", serde_json::to_string(&PrintTask::Tracker(ht))?);
+            if json {
+                println!("{}", serde_json::to_string(&TaskEnvelope::tracker(ht)?)?);
             } else {
                 client.print_tracker(&ht)?;
             }
         }
-        KonanCommand::File { loc, rows, task } => {
+        KonanCommand::File { loc, rows, json } => {
             let basename = loc
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -142,8 +143,8 @@ pub fn handle_konan_command(args: KonanArgs, client: &TitansTowerClient) -> Resu
                 file_name: basename,
                 rows,
             };
-            if task == Some(true) {
-                println!("{}", serde_json::to_string(&PrintTask::File(pft))?);
+            if json {
+                println!("{}", serde_json::to_string(&TaskEnvelope::file(pft)?)?);
             } else {
                 client.upload_file(&loc)?;
                 client.print_file(&pft)?;
@@ -153,24 +154,26 @@ pub fn handle_konan_command(args: KonanArgs, client: &TitansTowerClient) -> Resu
             name,
             r_rule,
             start,
-            task,
+            json,
         } => {
-            let task_json = if task.trim() == "-" {
+            let envelope_json = if json.trim() == "-" {
                 let mut buf = String::new();
                 std::io::stdin().read_to_string(&mut buf)?;
                 buf
             } else {
-                task
+                json
             };
-            let parsed_task: PrintTask = serde_json::from_str(task_json.trim())?;
+            let envelope: TaskEnvelope = serde_json::from_str(envelope_json.trim())?;
             let parsed_rrule: RRule<Unvalidated> = r_rule
                 .parse()
                 .map_err(|e: rrule::RRuleError| CliError::RRule(e.to_string()))?;
             let payload = CreateSchedule {
                 name,
-                task: parsed_task,
-                r_rule: parsed_rrule,
-                start,
+                task_type: envelope.task_type,
+                payload: envelope.payload,
+                rrule: Some(parsed_rrule),
+                at_unix: None,
+                start_unix: start,
             };
             let id = client.create_schedule(&payload)?;
             println!("{id}");

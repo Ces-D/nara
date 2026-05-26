@@ -3,10 +3,11 @@ use crate::discord::{
     ui::{parse_date, parse_rrule},
 };
 use crate::error::ServiceError;
-use crate::ops;
-use chrono::{DateTime, Duration, Utc};
+use cadence_core::database::Schedule;
+use cadence_core::registry::Task;
+use chrono::{Duration, Utc};
 use konan_core::{
-    print_ops::{CreateSchedule, PrintTask, Schedule},
+    print_ops::PrintFileTask,
     template::{BoxOutline, HabitTracker},
 };
 
@@ -29,7 +30,7 @@ pub async fn template(
         draft.set_date_banner(Some(parsed));
     }
 
-    ops::konan::create_outline(ctx.data().konan_pool.clone(), draft).await?;
+    ctx.data().konan.print_outline(draft).await?;
     ctx.say("Created template").await?;
     Ok(())
 }
@@ -51,7 +52,7 @@ pub async fn tracker(
         None => start + Duration::weeks(2),
     };
     let draft = HabitTracker::new(habit, start, end);
-    ops::konan::create_tracker(ctx.data().konan_pool.clone(), draft).await?;
+    ctx.data().konan.print_tracker(draft).await?;
     ctx.say(format!(
         "Created tracker from {} to {}",
         start.format("%m-%d-%Y"),
@@ -87,13 +88,10 @@ pub async fn schedule_template(
         None => Utc::now(),
     };
     let r_rule = parse_rrule("rrule", &rrule, start)?;
-    let schedule = CreateSchedule {
-        name: name.clone(),
-        task: PrintTask::Outline(draft),
-        r_rule,
-        start,
-    };
-    ops::konan::create_schedule(ctx.data().konan_pool.clone(), schedule).await?;
+    ctx.data()
+        .konan
+        .schedule_outline(name.clone(), draft, Some(r_rule), start)
+        .await?;
     ctx.say(format!("Created template schedule '{name}'"))
         .await?;
     Ok(())
@@ -126,44 +124,44 @@ pub async fn schedule_tracker(
         None => Utc::now(),
     };
     let r_rule = parse_rrule("rrule", &rrule, start)?;
-    let schedule = CreateSchedule {
-        name: name.clone(),
-        task: PrintTask::Tracker(draft),
-        r_rule,
-        start,
-    };
-    ops::konan::create_schedule(ctx.data().konan_pool.clone(), schedule).await?;
+    ctx.data()
+        .konan
+        .schedule_tracker(name.clone(), draft, Some(r_rule), start)
+        .await?;
     ctx.say(format!("Created tracker schedule '{name}'"))
         .await?;
     Ok(())
 }
 
-fn task_kind(task: &PrintTask) -> &'static str {
-    match task {
-        PrintTask::Outline(_) => "template",
-        PrintTask::Tracker(_) => "tracker",
-        PrintTask::File(_) => "file",
+fn task_kind(task_type: &str) -> &'static str {
+    const OUTLINE: &str = <BoxOutline as Task>::TASK_TYPE;
+    const TRACKER: &str = <HabitTracker as Task>::TASK_TYPE;
+    const FILE: &str = <PrintFileTask as Task>::TASK_TYPE;
+    match task_type {
+        OUTLINE => "template",
+        TRACKER => "tracker",
+        FILE => "file",
+        _ => "unknown",
     }
-}
-
-fn format_unix(unix: i64) -> String {
-    DateTime::<Utc>::from_timestamp(unix, 0)
-        .map(|d| d.format("%m-%d-%Y").to_string())
-        .unwrap_or_else(|| format!("invalid({unix})"))
 }
 
 fn format_schedule(s: &Schedule) -> String {
     let next_run = s
         .next_run_unix
-        .map(format_unix)
+        .map(|d| d.format("%m-%d-%Y").to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let rrule = s
+        .rrule
+        .as_ref()
+        .map(|r| r.to_string())
         .unwrap_or_else(|| "—".to_string());
     format!(
         "**{}** (id: {}) [{}]\n  rrule: `{}`\n  start: {}\n  next run: {}",
         s.name,
         s.id,
-        task_kind(&s.task),
-        s.r_rule,
-        format_unix(s.start_unix),
+        task_kind(&s.task_type),
+        rrule,
+        s.start_unix.format("%m-%d-%Y"),
         next_run,
     )
 }
@@ -171,7 +169,7 @@ fn format_schedule(s: &Schedule) -> String {
 #[poise::command(slash_command)]
 pub async fn list_schedules(ctx: Context<'_>) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let schedules = ops::konan::list_schedules(ctx.data().konan_pool.clone()).await?;
+    let schedules = ctx.data().konan.list_schedules().await?;
     if schedules.is_empty() {
         ctx.say("No schedules created.").await?;
     } else {
@@ -188,13 +186,8 @@ pub async fn delete_schedule(
     #[description = "Id of the schedule"] id: i64,
 ) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let changed = ops::konan::delete_schedule(ctx.data().konan_pool.clone(), id).await?;
-    let msg = if changed == 0 {
-        format!("No schedule found with id {id}.")
-    } else {
-        format!("Schedule {id} deleted.")
-    };
-    ctx.say(msg).await?;
+    ctx.data().konan.delete_schedule(id).await?;
+    ctx.say(format!("Schedule {id} deleted.")).await?;
     Ok(())
 }
 
