@@ -38,9 +38,9 @@ pub fn pool() -> Result<CadenceDBPool, CadenceError> {
     let db_path = database_loc();
     let manager = SqliteConnectionManager::file(db_path).with_init(|c| {
         c.execute_batch(
-            "PRAGMA journal_mode = WAL;\
+            "PRAGMA busy_timeout = 5000;\
+             PRAGMA journal_mode = WAL;\
              PRAGMA synchronous = NORMAL;\
-             PRAGMA busy_timeout = 5000;\
              PRAGMA foreign_keys = ON;\
              PRAGMA recursive_triggers = ON;",
         )

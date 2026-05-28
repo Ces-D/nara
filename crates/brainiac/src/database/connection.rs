@@ -16,7 +16,13 @@ fn run_migrations(conn: &BrainiacDbPoolConnection) -> rusqlite::Result<()> {
 
 pub fn pool() -> Result<BrainiacDbPool, BrainiacDbError> {
     let manager = SqliteConnectionManager::file(brainiac_database()).with_init(|c| {
-        c.execute_batch("PRAGMA foreign_keys = ON; PRAGMA recursive_triggers = ON;")
+        c.execute_batch(
+            "PRAGMA busy_timeout = 5000;\
+             PRAGMA journal_mode = WAL;\
+             PRAGMA synchronous = NORMAL;\
+             PRAGMA foreign_keys = ON;\
+             PRAGMA recursive_triggers = ON;",
+        )
     });
     let pool = r2d2::Pool::new(manager)?;
     run_migrations(&pool.get()?)?;

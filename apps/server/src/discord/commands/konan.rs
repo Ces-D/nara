@@ -1,6 +1,5 @@
 use crate::discord::Context;
 use crate::error::ServiceError;
-use titans_tower::{parse_date, parse_rrule};
 use cadence_core::database::Schedule;
 use cadence_core::registry::Task;
 use chrono::{Duration, Utc};
@@ -8,6 +7,7 @@ use konan_core::{
     print_ops::PrintFileTask,
     template::{BoxOutline, HabitTracker},
 };
+use titans_tower::{parse_date, parse_rrule};
 
 #[poise::command(slash_command)]
 pub async fn template(
