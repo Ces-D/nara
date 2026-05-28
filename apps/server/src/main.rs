@@ -29,6 +29,8 @@ async fn main() {
 }
 
 async fn run() -> Result<(), error::ServiceError> {
+    log::info!("nara server: starting up");
+
     let token = std::env::var("NARA_SERVER_DISCORD_BOT_TOKEN")
         .map_err(|_| error::ServiceError::Config("missing NARA_SERVER_DISCORD_BOT_TOKEN".into()))?;
 
@@ -39,17 +41,23 @@ async fn run() -> Result<(), error::ServiceError> {
             "invalid NARA_SERVER_BIND_ADDR `{bind_addr_str}`: {e}"
         ))
     })?;
+    log::debug!("nara server: config loaded, bind_addr={bind_addr}");
 
     let allowed_origins = parse_allowed_origins()?;
+    log::debug!("nara server: {} allowed CORS origin(s)", allowed_origins.len());
 
+    log::info!("nara server: initializing brainiac database pool");
     let brainiac_pool =
         brainiac_core::database::connection::pool().map_err(error::ServiceError::from)?;
+    log::info!("nara server: initializing cadence database pool");
     let cadence_pool = cadence_core::database::pool()?;
     let konan = konan_core::KonanScheduler::new(cadence_pool.clone());
 
+    log::info!("nara server: spawning discord client");
     let mut client = discord::spawn_client(token, konan.clone(), brainiac_pool.clone()).await?;
     let discord_http = client.http.clone();
 
+    log::debug!("nara server: registering task handlers and channels");
     let mut tasks = cadence_core::registry::TaskRegistry::default();
     konan_core::KonanScheduler::register_handlers(&mut tasks);
 
@@ -129,7 +137,10 @@ async fn run() -> Result<(), error::ServiceError> {
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     log::info!("HTTP listening on {bind_addr}");
 
-    let bot = async move { client.start().await.map_err(error::ServiceError::from) };
+    let bot = async move {
+        log::info!("nara server: discord bot loop started");
+        client.start().await.map_err(error::ServiceError::from)
+    };
     let server = async move {
         axum::serve(listener, app)
             .await
@@ -137,10 +148,12 @@ async fn run() -> Result<(), error::ServiceError> {
     };
     let executor_pool = cadence_pool.clone();
     let executor = async move {
+        log::info!("nara server: cadence executor loop started");
         cadence_core::executor::run(executor_pool, tasks, channels).await;
         Ok::<(), error::ServiceError>(())
     };
 
+    log::info!("nara server: all subsystems initialized, entering run loop");
     tokio::try_join!(bot, server, executor)?;
     Ok(())
 }
