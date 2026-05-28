@@ -1,8 +1,6 @@
-use crate::discord::{
-    Context,
-    ui::{parse_date, parse_rrule},
-};
+use crate::discord::Context;
 use crate::error::ServiceError;
+use titans_tower::{parse_date, parse_rrule};
 use cadence_core::database::Schedule;
 use cadence_core::registry::Task;
 use chrono::{Duration, Utc};

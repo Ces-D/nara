@@ -38,8 +38,8 @@ impl<T: Task, H: Handler<T>> ErasedHandler for HandlerAdapter<T, H> {
         payload: serde_json::Value,
         ctx: &JobContext,
     ) -> Result<JobOutcome, CadenceError> {
-        let typed: T = serde_json::from_value(payload)
-            .map_err(|e| CadenceError::Channel(e.to_string()))?;
+        let typed: T =
+            serde_json::from_value(payload).map_err(|e| CadenceError::Channel(e.to_string()))?;
         self.handler.run(typed, ctx).await
     }
 }
@@ -101,8 +101,8 @@ impl JobOutcome {
         artifact_ref: Option<String>,
         delay: Duration,
     ) -> Result<Self, CadenceError> {
-        let payload = serde_json::to_value(payload)
-            .map_err(|e| CadenceError::Channel(e.to_string()))?;
+        let payload =
+            serde_json::to_value(payload).map_err(|e| CadenceError::Channel(e.to_string()))?;
         Ok(JobOutcome::Spawn {
             task_type: T::TASK_TYPE.to_string(),
             payload,

@@ -21,3 +21,4 @@ tower-http.workspace = true
 konan_core = { path = "../../crates/konan/" }
 brainiac_core = { path = "../../crates/brainiac/" }
 cadence_core = { path = "../../crates/cadence/" }
+titans_tower = { path = "../../crates/titans_tower/" }

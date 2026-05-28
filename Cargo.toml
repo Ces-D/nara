@@ -5,7 +5,7 @@ members = [
   "apps/server",
   "crates/brainiac",
   "apps/cli",
-  "crates/cadence",
+  "crates/cadence", "crates/titans_tower",
 ]
 
 [workspace.package]

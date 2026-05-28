@@ -47,11 +47,15 @@ async fn run() -> Result<(), error::ServiceError> {
     let cadence_pool = cadence_core::database::pool()?;
     let konan = konan_core::KonanScheduler::new(cadence_pool.clone());
 
+    let mut client = discord::spawn_client(token, konan.clone(), brainiac_pool.clone()).await?;
+    let discord_http = client.http.clone();
+
     let mut tasks = cadence_core::registry::TaskRegistry::default();
     konan_core::KonanScheduler::register_handlers(&mut tasks);
 
     let mut channels = cadence_core::channels::ChannelRegistry::default();
     konan_core::KonanScheduler::register_channels(&mut channels);
+    titans_tower::register_channels(&mut channels, discord_http)?;
 
     let tasks = Arc::new(tasks);
     let channels = Arc::new(channels);
@@ -124,8 +128,6 @@ async fn run() -> Result<(), error::ServiceError> {
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     log::info!("HTTP listening on {bind_addr}");
-
-    let mut client = discord::spawn_client(token, konan, brainiac_pool).await?;
 
     let bot = async move { client.start().await.map_err(error::ServiceError::from) };
     let server = async move {

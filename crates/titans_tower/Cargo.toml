@@ -1,0 +1,18 @@
+[package]
+name = "titans_tower"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+log.workspace = true
+poise.workspace = true
+rrule.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serenity.workspace = true
+thiserror.workspace = true
+
+cadence_core = { path = "../cadence/" }
