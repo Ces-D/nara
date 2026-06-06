@@ -3,13 +3,40 @@ use crate::discord::{
     ui::{answer_embed, paginate::paginate_with_review, practice_item_embed},
 };
 use crate::error::ServiceError;
-use crate::ops;
-use brainiac_core::database::models::{CategoryTagLink, CreateCategory, CreateItem, UpdateItem};
+use brainiac_core::database::{
+    self,
+    models::{CategoryTagLink, CreateCategory, CreateItem, UpdateItem},
+};
+
+/// The only channel `/brainiac` commands are allowed to run in.
+pub const CHANNEL: &str = "brainiac";
+
+/// Detailed help text pinned to the #brainiac channel on startup.
+pub fn help_message() -> String {
+    "**Brainiac — flashcard & practice commands**\n\
+     Use these in this channel (#brainiac) only.\n\n\
+     • `/brainiac list_categories` — list categories with their tags.\n\
+     • `/brainiac create_category` — create a category. Args: `name`; option `description`.\n\
+     • `/brainiac delete_category` — delete a category by `id`.\n\
+     • `/brainiac add_category_tag` — link a tag to a category. Args: `id`, `name`.\n\
+     • `/brainiac list_tags` — list all tags.\n\
+     • `/brainiac remove_category_tag` — unlink a tag from a category. Args: `id`, `name`.\n\
+     • `/brainiac practice` — run a practice session. \
+     Options: `category_ids` (comma-separated), `tag_names` (comma-separated).\n\
+     • `/brainiac create_item` — create a practice item via modal. Args: `category_id`.\n\
+     • `/brainiac edit_item` — edit a practice item via modal. Args: `id`."
+        .to_string()
+}
+
+/// Parent-command check: restricts `/brainiac` (and subcommands) to #brainiac.
+async fn in_brainiac_channel(ctx: Context<'_>) -> Result<bool, ServiceError> {
+    titans_tower::require_channel(ctx, CHANNEL).await
+}
 
 #[poise::command(slash_command)]
 pub async fn list_categories(ctx: Context<'_>) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let categories = ops::brainiac::list_categories(ctx.data().brainiac_pool.clone()).await?;
+    let categories = database::list_categories_with_tags(&ctx.data().brainiac_pool).await?;
     if categories.is_empty() {
         ctx.say("No categories created").await?;
         return Ok(());
@@ -50,7 +77,7 @@ pub async fn create_category(
         description,
         created_at: None,
     };
-    let id = ops::brainiac::create_category(ctx.data().brainiac_pool.clone(), create).await?;
+    let id = database::create_category(&ctx.data().brainiac_pool, create).await?;
     ctx.say(format!("Category '{}' created (id: {id}).", name))
         .await?;
     Ok(())
@@ -62,7 +89,7 @@ pub async fn delete_category(
     #[description = "Id of the Category"] id: i64,
 ) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let was_deleted = ops::brainiac::delete_category(ctx.data().brainiac_pool.clone(), id).await?;
+    let was_deleted = database::delete_category(&ctx.data().brainiac_pool, id).await?;
     let msg = if !was_deleted {
         format!("No category found with id {id}.")
     } else {
@@ -83,7 +110,7 @@ pub async fn add_category_tag(
         category_id: id,
         tag_name: name.clone(),
     };
-    ops::brainiac::add_category_tag(ctx.data().brainiac_pool.clone(), link).await?;
+    database::add_tag_to_category(&ctx.data().brainiac_pool, link).await?;
     ctx.say(format!(
         "Tag '{}' linked to category {id}.",
         name.trim().to_uppercase()
@@ -95,7 +122,7 @@ pub async fn add_category_tag(
 #[poise::command(slash_command)]
 pub async fn list_tags(ctx: Context<'_>) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let tags = ops::brainiac::list_tags(ctx.data().brainiac_pool.clone()).await?;
+    let tags = database::list_tags(&ctx.data().brainiac_pool).await?;
     if tags.is_empty() {
         ctx.say("No tags created").await?;
     } else {
@@ -118,12 +145,8 @@ pub async fn remove_category_tag(
     #[description = "Name of the Tag"] name: String,
 ) -> Result<(), ServiceError> {
     ctx.defer().await?;
-    let link = CategoryTagLink {
-        category_id: id,
-        tag_name: name.clone(),
-    };
     let was_removed =
-        ops::brainiac::remove_category_tag(ctx.data().brainiac_pool.clone(), link).await?;
+        database::remove_tag_from_category(&ctx.data().brainiac_pool, id, name.clone()).await?;
     let msg = if !was_removed {
         format!(
             "Tag '{}' was not linked to category {id}.",
@@ -154,9 +177,8 @@ pub async fn practice(
     let tag_names: Option<Vec<String>> =
         tag_names.map(|v| v.split(",").map(|s| s.trim().to_string()).collect());
     loop {
-        let pool = ctx.data().brainiac_pool.clone();
-        match ops::brainiac::fetch_practice_and_answer(
-            pool,
+        match database::get_practice_item_with_answer(
+            &ctx.data().brainiac_pool,
             category_ids.clone(),
             tag_names.clone(),
         )
@@ -166,8 +188,8 @@ pub async fn practice(
                 let pages = vec![practice_item_embed(&practice), answer_embed(&answer)];
                 match paginate_with_review(ctx, pages).await? {
                     Some(rating) => {
-                        ops::brainiac::rate_practice_item(
-                            ctx.data().brainiac_pool.clone(),
+                        database::rate_practice_item(
+                            &ctx.data().brainiac_pool,
                             practice.id,
                             rating,
                         )
@@ -213,7 +235,7 @@ pub async fn create_item(
         back: data.answer,
         created_at: None,
     };
-    ops::brainiac::create_items(ctx.data().brainiac_pool.clone(), vec![item]).await?;
+    database::create_items(&ctx.data().brainiac_pool, vec![item]).await?;
     poise::Context::Application(ctx)
         .say(format!("Practice item created in category {category_id}."))
         .await?;
@@ -225,7 +247,7 @@ pub async fn edit_item(
     ctx: poise::ApplicationContext<'_, AppData, ServiceError>,
     #[description = "Id of the Item"] id: i64,
 ) -> Result<(), ServiceError> {
-    let existing = ops::brainiac::get_item(ctx.data().brainiac_pool.clone(), id).await?;
+    let existing = database::get_item(&ctx.data().brainiac_pool, id).await?;
     let prefilled = PracticeItemModal {
         question: existing.front,
         answer: existing.back,
@@ -237,7 +259,7 @@ pub async fn edit_item(
         front: Some(data.question),
         back: Some(data.answer),
     };
-    ops::brainiac::update_item(ctx.data().brainiac_pool.clone(), id, update).await?;
+    database::update_item(&ctx.data().brainiac_pool, id, update).await?;
     poise::Context::Application(ctx)
         .say(format!("Practice item {id} updated."))
         .await?;
@@ -257,7 +279,8 @@ pub async fn edit_item(
         "create_item",
         "edit_item",
     ),
-    subcommand_required
+    subcommand_required,
+    check = "in_brainiac_channel"
 )]
 pub async fn brainiac(_ctx: Context<'_>) -> Result<(), ServiceError> {
     Ok(())

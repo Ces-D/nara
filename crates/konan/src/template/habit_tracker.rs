@@ -70,8 +70,6 @@ fn with_checkmarks(
     start_date: &DateTime<Utc>,
     end_date: &DateTime<Utc>,
 ) -> escpos::errors::Result<()> {
-    printer.set_line_justification(Justification::Center);
-    printer.set_cached_bold(true);
     printer.set_cached_text_size(TextSize::Medium);
 
     const SEGMENTS_PER_LINE: usize = 4;
@@ -91,6 +89,8 @@ fn with_checkmarks(
     }
 
     for chunk in day_numbers.chunks(SEGMENTS_PER_LINE) {
+        printer.set_cached_bold(true);
+        printer.set_line_justification(Justification::Center);
         let line = chunk
             .iter()
             .map(|day| format!("( {:02} )", day))

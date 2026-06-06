@@ -9,10 +9,9 @@ use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
-mod db;
 mod discord;
 mod error;
-mod ops;
+mod features;
 mod service;
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:3000";
@@ -44,7 +43,10 @@ async fn run() -> Result<(), error::ServiceError> {
     log::debug!("nara server: config loaded, bind_addr={bind_addr}");
 
     let allowed_origins = parse_allowed_origins()?;
-    log::debug!("nara server: {} allowed CORS origin(s)", allowed_origins.len());
+    log::debug!(
+        "nara server: {} allowed CORS origin(s)",
+        allowed_origins.len()
+    );
 
     log::info!("nara server: initializing brainiac database pool");
     let brainiac_pool =
@@ -53,13 +55,24 @@ async fn run() -> Result<(), error::ServiceError> {
     let cadence_pool = cadence_core::database::pool()?;
     let konan = konan_core::KonanScheduler::new(cadence_pool.clone());
 
+    log::info!("nara server: initializing bean database pool");
+    let bean_pool = bean::pool()?;
+
     log::info!("nara server: spawning discord client");
-    let mut client = discord::spawn_client(token, konan.clone(), brainiac_pool.clone()).await?;
+    let mut client = discord::spawn_client(
+        token,
+        konan.clone(),
+        brainiac_pool.clone(),
+        bean_pool.clone(),
+    )
+    .await?;
     let discord_http = client.http.clone();
 
     log::debug!("nara server: registering task handlers and channels");
     let mut tasks = cadence_core::registry::TaskRegistry::default();
     konan_core::KonanScheduler::register_handlers(&mut tasks);
+    features::daily_dilly::register(&mut tasks, discord_http.clone(), bean_pool.clone())?;
+    features::daily_dilly::ensure_schedule(&cadence_pool).await?;
 
     let mut channels = cadence_core::channels::ChannelRegistry::default();
     konan_core::KonanScheduler::register_channels(&mut channels);

@@ -1,11 +1,11 @@
 use crate::error::ServiceResult;
-use crate::ops;
 use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
 };
 use brainiac_core::database::{
+    self,
     connection::BrainiacDbPool,
     models::{
         Category, CategoryTag, CategoryTagLink, CreateCategory, CreateItem, PracticeItem,
@@ -16,7 +16,7 @@ use brainiac_core::database::{
 pub async fn list_categories(
     State(pool): State<BrainiacDbPool>,
 ) -> ServiceResult<Json<Vec<(Category, Vec<CategoryTag>)>>> {
-    let categories = ops::brainiac::list_categories(pool).await?;
+    let categories = database::list_categories_with_tags(&pool).await?;
     Ok(Json(categories))
 }
 
@@ -24,7 +24,7 @@ pub async fn create_category(
     State(pool): State<BrainiacDbPool>,
     Json(payload): Json<CreateCategory>,
 ) -> ServiceResult<StatusCode> {
-    ops::brainiac::create_category(pool, payload).await?;
+    database::create_category(&pool, payload).await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -32,7 +32,7 @@ pub async fn delete_category(
     State(pool): State<BrainiacDbPool>,
     Path(id): Path<i64>,
 ) -> ServiceResult<StatusCode> {
-    let was_deleted = ops::brainiac::delete_category(pool, id).await?;
+    let was_deleted = database::delete_category(&pool, id).await?;
     if was_deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -44,14 +44,14 @@ pub async fn add_category_tag(
     State(pool): State<BrainiacDbPool>,
     Json(payload): Json<CategoryTagLink>,
 ) -> ServiceResult<StatusCode> {
-    ops::brainiac::add_category_tag(pool, payload).await?;
+    database::add_tag_to_category(&pool, payload).await?;
     Ok(StatusCode::CREATED)
 }
 
 pub async fn list_tags(
     State(pool): State<BrainiacDbPool>,
 ) -> ServiceResult<Json<Vec<CategoryTag>>> {
-    let tags = ops::brainiac::list_tags(pool).await?;
+    let tags = database::list_tags(&pool).await?;
     Ok(Json(tags))
 }
 
@@ -59,7 +59,8 @@ pub async fn remove_category_tag(
     State(pool): State<BrainiacDbPool>,
     Json(payload): Json<CategoryTagLink>,
 ) -> ServiceResult<StatusCode> {
-    let was_removed = ops::brainiac::remove_category_tag(pool, payload).await?;
+    let was_removed =
+        database::remove_tag_from_category(&pool, payload.category_id, payload.tag_name).await?;
     if was_removed {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -71,8 +72,8 @@ pub async fn practice(
     State(pool): State<BrainiacDbPool>,
     Json(payload): Json<PracticeItemsFilters>,
 ) -> ServiceResult<Json<Vec<PracticeItem>>> {
-    let items = ops::brainiac::fetch_practice_items(
-        pool,
+    let items = database::get_practice_items(
+        &pool,
         payload.limit,
         payload.category_ids,
         payload.tag_names,
@@ -85,7 +86,7 @@ pub async fn practice_item_answer(
     State(pool): State<BrainiacDbPool>,
     Path(id): Path<i64>,
 ) -> ServiceResult<Json<PracticeItemAnswer>> {
-    let answer = ops::brainiac::get_practice_item_answer(pool, id).await?;
+    let answer = database::get_practice_item_answer(&pool, id).await?;
     Ok(Json(answer))
 }
 
@@ -93,7 +94,7 @@ pub async fn create_practice_items(
     State(pool): State<BrainiacDbPool>,
     Json(payload): Json<Vec<CreateItem>>,
 ) -> ServiceResult<StatusCode> {
-    ops::brainiac::create_items(pool, payload).await?;
+    database::create_items(&pool, payload).await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -102,7 +103,7 @@ pub async fn edit_practice_item(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateItem>,
 ) -> ServiceResult<StatusCode> {
-    let was_updated = ops::brainiac::update_item(pool, id, payload).await?;
+    let was_updated = database::update_item(&pool, id, payload).await?;
     if was_updated {
         Ok(StatusCode::NO_CONTENT)
     } else {

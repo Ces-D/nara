@@ -9,6 +9,31 @@ use konan_core::{
 };
 use titans_tower::{parse_date, parse_rrule};
 
+/// The only channel `/konan` commands are allowed to run in.
+pub const CHANNEL: &str = "konan";
+
+/// Detailed help text pinned to the #konan channel on startup.
+pub fn help_message() -> String {
+    "**Konan — print & schedule commands**\n\
+     Use these in this channel (#konan) only.\n\n\
+     • `/konan template` — print a box-outline template. \
+     Options: `rows` (default 30), `lined` (default true), `banner`, `date` (MM-DD-YYYY).\n\
+     • `/konan tracker` — print a habit tracker. \
+     Args: `habit`; options `start_date`, `end_date` (MM-DD-YYYY, default 2 weeks after start).\n\
+     • `/konan schedule_template` — recurring template print. \
+     Args: `name`, `rrule` (e.g. `FREQ=WEEKLY;BYDAY=MO`); options `schedule_start`, `rows`, `lined`, `banner`, `date`.\n\
+     • `/konan schedule_tracker` — recurring tracker print. \
+     Args: `name`, `rrule`, `habit`; options `schedule_start`, `start_date`, `end_date`.\n\
+     • `/konan list_schedules` — list all schedules with id, rrule, next run.\n\
+     • `/konan delete_schedule` — delete a schedule by `id`."
+        .to_string()
+}
+
+/// Parent-command check: restricts `/konan` (and all its subcommands) to #konan.
+async fn in_konan_channel(ctx: Context<'_>) -> Result<bool, ServiceError> {
+    titans_tower::require_channel(ctx, CHANNEL).await
+}
+
 #[poise::command(slash_command)]
 pub async fn template(
     ctx: Context<'_>,
@@ -199,7 +224,8 @@ pub async fn delete_schedule(
         "list_schedules",
         "delete_schedule",
     ),
-    subcommand_required
+    subcommand_required,
+    check = "in_konan_channel"
 )]
 pub async fn konan(_ctx: Context<'_>) -> Result<(), ServiceError> {
     Ok(())

@@ -6,6 +6,7 @@ use cadence_core::{
 };
 use serde::{Deserialize, Serialize};
 use serenity::all::{ChannelId, CreateEmbed, CreateMessage, Http};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub const DISCORD_EMBED_MIME: &str = "application/x-discord-embed+json";
@@ -116,17 +117,13 @@ fn chunk_message(text: &str, max_len: usize) -> Vec<String> {
     chunks
 }
 
-/// Registers a [`DiscordChannel`] for every entry declared in the
-/// `NARA_DISCORD_CHANNELS` env var. Format: `name:channel_id,name:channel_id,...`
-/// — each entry becomes a channel named `discord.<name>`. Missing env means no
-/// Discord channels are registered (producers addressing them will get
-/// `CadenceError::NoChannel`).
-pub fn register_channels(
-    registry: &mut ChannelRegistry,
-    http: Arc<Http>,
-) -> Result<(), TowerError> {
+/// Parses the `NARA_DISCORD_CHANNELS` env var into a map of raw channel name ->
+/// [`ChannelId`]. Format: `name:channel_id,name:channel_id,...`. A missing env
+/// var yields an empty map.
+pub fn configured_channel_ids() -> Result<HashMap<String, ChannelId>, TowerError> {
+    let mut map = HashMap::new();
     let Ok(spec) = std::env::var(DISCORD_CHANNELS_ENV) else {
-        return Ok(());
+        return Ok(map);
     };
     for entry in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         let (raw_name, id_str) = entry.split_once(':').ok_or_else(|| {
@@ -139,10 +136,34 @@ pub fn register_channels(
                 "invalid channel id in {DISCORD_CHANNELS_ENV} entry `{entry}`: {e}"
             ))
         })?;
-        let name: &'static str = Box::leak(format!("discord.{}", raw_name.trim()).into_boxed_str());
+        map.insert(raw_name.trim().to_string(), ChannelId::new(id));
+    }
+    Ok(map)
+}
+
+/// Resolves a single channel id by raw name from `NARA_DISCORD_CHANNELS`,
+/// erroring if no entry is configured for `name`.
+pub fn configured_channel_id(name: &str) -> Result<ChannelId, TowerError> {
+    configured_channel_ids()?.remove(name).ok_or_else(|| {
+        TowerError::ChannelConfig(format!(
+            "no channel id configured for `{name}` in {DISCORD_CHANNELS_ENV}"
+        ))
+    })
+}
+
+/// Registers a [`DiscordChannel`] for every entry declared in the
+/// `NARA_DISCORD_CHANNELS` env var — each entry becomes a channel named
+/// `discord.<name>`. Missing env means no Discord channels are registered
+/// (producers addressing them will get `CadenceError::NoChannel`).
+pub fn register_channels(
+    registry: &mut ChannelRegistry,
+    http: Arc<Http>,
+) -> Result<(), TowerError> {
+    for (raw_name, id) in configured_channel_ids()? {
+        let name: &'static str = Box::leak(format!("discord.{raw_name}").into_boxed_str());
         registry.register(DiscordChannel {
             name,
-            channel_id: ChannelId::new(id),
+            channel_id: id,
             http: http.clone(),
         });
         log::info!("Registered discord channel `{name}` -> {id}");

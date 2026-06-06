@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use brainiac_core::database::BrainiacDbError;
+use brainiac_core::error::BrainiacError;
 use cadence_core::error::CadenceError;
 use titans_tower::UserFacingError;
 
@@ -15,7 +15,9 @@ pub enum ServiceError {
     #[error(transparent)]
     Tower(#[from] titans_tower::TowerError),
     #[error(transparent)]
-    Brainiac(#[from] BrainiacDbError),
+    Brainiac(#[from] BrainiacError),
+    #[error(transparent)]
+    Bean(#[from] bean::error::BeanError),
     #[error(transparent)]
     Cadence(#[from] CadenceError),
     #[error("task join error: {0}")]
@@ -40,6 +42,7 @@ impl ServiceError {
             Self::BadRequest(_) | Self::Field(_) | Self::Multipart(_) => StatusCode::BAD_REQUEST,
             Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Brainiac(_)
+            | Self::Bean(_)
             | Self::Cadence(_)
             | Self::Io(_)
             | Self::Join(_)

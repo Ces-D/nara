@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 env_logger.workspace = true
 log.workspace = true
 tokio.workspace = true
@@ -22,3 +23,4 @@ konan_core = { path = "../../crates/konan/" }
 brainiac_core = { path = "../../crates/brainiac/" }
 cadence_core = { path = "../../crates/cadence/" }
 titans_tower = { path = "../../crates/titans_tower/" }
+bean = { path = "../../crates/bean/" }

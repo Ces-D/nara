@@ -15,9 +15,17 @@ const CADENCE_MIGRATIONS: &[&str; 2] = &[
 
 fn run_migrations(conn: &CadenceDBPoolConnection) -> Result<(), CadenceError> {
     for (i, migration) in CADENCE_MIGRATIONS.iter().enumerate() {
-        log::debug!("cadence: running migration {}/{}", i + 1, CADENCE_MIGRATIONS.len());
+        log::debug!(
+            "cadence: running migration {}/{}",
+            i + 1,
+            CADENCE_MIGRATIONS.len()
+        );
         conn.execute_batch(migration).inspect_err(|e| {
-            log::error!("cadence: migration {}/{} failed: {e}", i + 1, CADENCE_MIGRATIONS.len());
+            log::error!(
+                "cadence: migration {}/{} failed: {e}",
+                i + 1,
+                CADENCE_MIGRATIONS.len()
+            );
         })?;
     }
     log::debug!("cadence: all migrations applied");
@@ -52,7 +60,10 @@ pub fn pool() -> Result<CadenceDBPool, CadenceError> {
         )
     });
     let pool = r2d2::Pool::new(manager).inspect_err(|e| {
-        log::error!("cadence: failed to build connection pool for {}: {e}", db_path.display());
+        log::error!(
+            "cadence: failed to build connection pool for {}: {e}",
+            db_path.display()
+        );
     })?;
     let conn = pool.get().inspect_err(|e| {
         log::error!("cadence: failed to acquire initial connection from pool: {e}");

@@ -86,6 +86,16 @@ where
                             event.snake_case_name(),
                         );
                     }
+                    poise::FrameworkError::CommandCheckFailed { ctx, .. } => {
+                        // Checks reject e.g. wrong-channel usage and reply to the
+                        // user themselves, so only log at info instead of letting
+                        // builtins::on_error treat it as an error.
+                        log::info!(
+                            "Command `{}` blocked by a check (invoked by {})",
+                            ctx.command().qualified_name,
+                            ctx.author().name,
+                        );
+                    }
                     other => {
                         if let Err(e) = poise::builtins::on_error(other).await {
                             log::error!("Error while handling error: {e}");

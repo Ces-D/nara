@@ -1,4 +1,5 @@
-use crate::database::{BrainiacDbError, brainiac_database};
+use crate::database::brainiac_database;
+use crate::error::BrainiacError;
 use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 
@@ -9,16 +10,24 @@ const BRAINIAC_MIGRATIONS: &[&str] = &[include_str!("migrations/initialize_table
 
 fn run_migrations(conn: &BrainiacDbPoolConnection) -> rusqlite::Result<()> {
     for (i, migration) in BRAINIAC_MIGRATIONS.iter().enumerate() {
-        log::debug!("brainiac: running migration {}/{}", i + 1, BRAINIAC_MIGRATIONS.len());
+        log::debug!(
+            "brainiac: running migration {}/{}",
+            i + 1,
+            BRAINIAC_MIGRATIONS.len()
+        );
         conn.execute_batch(migration).inspect_err(|e| {
-            log::error!("brainiac: migration {}/{} failed: {e}", i + 1, BRAINIAC_MIGRATIONS.len());
+            log::error!(
+                "brainiac: migration {}/{} failed: {e}",
+                i + 1,
+                BRAINIAC_MIGRATIONS.len()
+            );
         })?;
     }
     log::debug!("brainiac: all migrations applied");
     Ok(())
 }
 
-pub fn pool() -> Result<BrainiacDbPool, BrainiacDbError> {
+pub fn pool() -> Result<BrainiacDbPool, BrainiacError> {
     let db_path = brainiac_database();
     log::info!("brainiac: opening database at {}", db_path.display());
     let manager = SqliteConnectionManager::file(&db_path).with_init(|c| {
@@ -31,7 +40,10 @@ pub fn pool() -> Result<BrainiacDbPool, BrainiacDbError> {
         )
     });
     let pool = r2d2::Pool::new(manager).inspect_err(|e| {
-        log::error!("brainiac: failed to build connection pool for {}: {e}", db_path.display());
+        log::error!(
+            "brainiac: failed to build connection pool for {}: {e}",
+            db_path.display()
+        );
     })?;
     let conn = pool.get().inspect_err(|e| {
         log::error!("brainiac: failed to acquire initial connection from pool: {e}");
