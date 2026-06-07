@@ -54,11 +54,6 @@ pub struct DailyDillyHandler {
 }
 
 impl DailyDillyHandler {
-    /// Construct a handler using the default (placeholder) summarizer.
-    pub fn new(http: Arc<Http>, bean: BeanDBPool, channel_id: ChannelId) -> Self {
-        Self::with_summarizer(http, bean, channel_id, Arc::new(summarize::JoinSummarizer))
-    }
-
     /// Construct a handler with an explicit summarizer — the seam for an
     /// LLM-backed implementation (and for tests with a fake).
     pub fn with_summarizer(
@@ -140,7 +135,16 @@ pub fn register(
     bean: BeanDBPool,
 ) -> Result<(), ServiceError> {
     let channel_id = titans_tower::configured_channel_id(CHANNEL)?;
-    tasks.register::<DailyDillySummarize, _>(DailyDillyHandler::new(http, bean, channel_id));
+    let summarizer: Arc<dyn summarize::Summarizer> = match summarize::AiSummarizer::from_env() {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            log::warn!("daily-dilly: {e}; using placeholder summarizer");
+            Arc::new(summarize::JoinSummarizer)
+        }
+    };
+    tasks.register::<DailyDillySummarize, _>(DailyDillyHandler::with_summarizer(
+        http, bean, channel_id, summarizer,
+    ));
     Ok(())
 }
 

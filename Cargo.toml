@@ -5,7 +5,9 @@ members = [
   "apps/server",
   "crates/brainiac",
   "apps/cli",
-  "crates/cadence", "crates/titans_tower", "crates/bean",
+  "crates/cadence",
+  "crates/titans_tower",
+  "crates/bean",
 ]
 
 [workspace.package]
@@ -14,6 +16,7 @@ edition = "2024"
 authors = ["Cesar <58753718+Ces-D@users.noreply.github.com>"]
 
 [workspace.dependencies]
+ai = "0.4.1"
 async-trait = "0.1.89"
 escpos = { version = "0.17.0", features = [
   "barcodes",

@@ -1,29 +1,4 @@
-use serenity::all::{
-    ChannelType, CreateChannel, CreateMessage, GuildChannel, GuildId, Http, UserId,
-};
-
-/// Ensures a text channel named `name` exists in `guild`, returning it. If no
-/// matching text channel is found it is created (requires the bot to hold the
-/// Manage Channels permission in the guild).
-pub async fn ensure_text_channel(
-    http: &Http,
-    guild: GuildId,
-    name: &str,
-) -> Result<GuildChannel, serenity::Error> {
-    let existing = guild
-        .channels(http)
-        .await?
-        .into_values()
-        .find(|c| c.kind == ChannelType::Text && c.name == name);
-    match existing {
-        Some(channel) => Ok(channel),
-        None => {
-            guild
-                .create_channel(http, CreateChannel::new(name).kind(ChannelType::Text))
-                .await
-        }
-    }
-}
+use serenity::all::{CreateMessage, GuildChannel, Http, UserId};
 
 /// (Re)pins `content` as the bot's help message in `channel`. Any pins
 /// previously authored by `bot_id` are removed first so the message can be
@@ -62,8 +37,12 @@ where
         .map(|c| c.name == name)
         .unwrap_or(false);
     if !in_channel {
-        ctx.say(format!("This command can only be used in #{name}."))
-            .await?;
+        ctx.send(
+            poise::CreateReply::default()
+                .content(format!("This command can only be used in #{name}."))
+                .ephemeral(true),
+        )
+        .await?;
     }
     Ok(in_channel)
 }

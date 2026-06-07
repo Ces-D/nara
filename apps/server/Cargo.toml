@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+ai.workspace = true
 async-trait.workspace = true
 env_logger.workspace = true
 log.workspace = true
